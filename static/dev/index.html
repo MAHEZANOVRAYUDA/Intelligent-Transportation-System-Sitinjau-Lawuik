@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Mode — Sitinjau Laut Detection</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0e14;
+      --surface: #131920;
+      --surface2: #1c2430;
+      --border: #2a3544;
+      --text: #e6edf3;
+      --muted: #7d8fa3;
+      --accent: #58a6ff;
+      --motor: #ffd60a;
+      --mobil: #3dd68c;
+      --bus: #ff9f0a;
+      --truck: #ff6b35;
+      --line: #ff453a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; }
+    .dev-badge {
+      background: #ff453a22; color: #ff453a; border: 1px solid #ff453a55;
+      padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace; font-weight: 600;
+    }
+    .header-links a {
+      color: var(--accent); text-decoration: none; font-size: 0.85rem; margin-left: 1rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .video-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .video-wrap {
+      background: #000;
+      aspect-ratio: 16/9;
+      position: relative;
+    }
+    .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    #line-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .video-wrap.calibrate #line-canvas { pointer-events: auto; cursor: crosshair; }
+    .video-offline {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 0.9rem;
+      pointer-events: none;
+    }
+    .video-meta {
+      padding: 0.75rem 1rem;
+      display: flex; gap: 1.5rem; flex-wrap: wrap;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    .video-meta val { color: var(--text); }
+
+    .sidebar { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+    }
+    .panel h2 {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted); margin-bottom: 0.65rem;
+    }
+
+    .hint { font-size: 0.75rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.65rem; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+    button {
+      font-family: inherit; font-size: 0.75rem; font-weight: 600;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      padding: 0.4rem 0.7rem; border-radius: 6px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.danger { border-color: #ff453a55; color: #ff453a; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    select {
+      width: 100%; background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem;
+      font-family: inherit; font-size: 0.8rem; margin-bottom: 0.5rem;
+    }
+    .coords { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+    #cal-status { font-size: 0.75rem; min-height: 1.1rem; margin-top: 0.4rem; color: var(--mobil); }
+
+    .class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .class-card {
+      background: var(--surface2);
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      border-left: 3px solid;
+    }
+    .class-card.motor { border-color: var(--motor); }
+    .class-card.mobil { border-color: var(--mobil); }
+    .class-card.bus { border-color: var(--bus); }
+    .class-card.truck { border-color: var(--truck); }
+    .class-card .label { font-size: 0.7rem; color: var(--muted); }
+    .class-card .live { font-size: 1.4rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .class-card .in-out { font-size: 0.65rem; color: var(--muted); margin-top: 0.15rem; font-family: 'JetBrains Mono', monospace; }
+
+    .track-list { max-height: 180px; overflow-y: auto; }
+    .track-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .track-item:last-child { border-bottom: none; }
+    .track-cls { font-weight: 600; }
+    .track-cls.motor { color: var(--motor); }
+    .track-cls.mobil { color: var(--mobil); }
+    .track-cls.bus { color: var(--bus); }
+    .track-cls.truck { color: var(--truck); }
+    .track-conf { color: var(--muted); }
+
+    .cross-list { max-height: 140px; overflow-y: auto; }
+    .cross-item {
+      font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;
+      padding: 0.35rem 0; border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .cross-item .dir-in { color: var(--mobil); }
+    .cross-item .dir-out { color: #ff453a; }
+
+    .empty { color: var(--muted); font-size: 0.8rem; font-style: italic; }
+    .hint { font-size: 0.75rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.65rem; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+    button {
+      font-family: inherit; font-size: 0.75rem; font-weight: 600;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      padding: 0.4rem 0.7rem; border-radius: 6px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.danger { border-color: #ff453a55; color: #ff453a; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    select {
+      width: 100%; background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem;
+      font-family: inherit; font-size: 0.8rem; margin-bottom: 0.5rem;
+    }
+    .coords { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+    #cal-status { font-size: 0.75rem; min-height: 1.1rem; margin-top: 0.4rem; color: var(--mobil); }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:0.75rem">
+      <span class="dev-badge">DEV MODE</span>
+      <h1>Detection Debug — Gerbang A</h1>
+    </div>
+    <div class="header-links">
+      <span id="ws-status" style="font-size:0.8rem;color:var(--muted)">Connecting...</span>
+      <a href="/">← Dashboard Produksi</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="video-panel">
+      <div class="video-wrap" id="video-wrap">
+        <img id="dev-stream" src="/api/dev/stream/A" alt="Detection Stream">
+        <canvas id="line-canvas"></canvas>
+        <div class="video-offline" id="video-offline" style="display:none">Menunggu frame deteksi...</div>
+      </div>
+      <div class="video-meta">
+        <span>Inference: <val id="meta-fps">—</val> FPS</span>
+        <span>Deteksi: <val id="meta-det">0</val></span>
+        <span>Track: <val id="meta-trk">0</val></span>
+        <span>Frame: <val id="meta-res">—</val></span>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <h2>Kalibrasi Garis</h2>
+        <p class="hint">Pilih garis yang akan diedit, lalu klik dua titik di video atau geser ujungnya. Merah = counting. Cyan = pemisah lajur. Simpan agar tidak hilang saat restart.</p>
+        <div class="btn-row">
+          <button id="btn-mode-count" type="button" class="active">Counting (merah)</button>
+          <button id="btn-mode-lane" type="button">Lajur (cyan)</button>
+        </div>
+        <div class="btn-row">
+          <button id="btn-calibrate" type="button">Mode kalibrasi</button>
+          <button id="btn-apply" type="button">Terapkan</button>
+          <button id="btn-save" type="button" class="primary">Simpan config</button>
+        </div>
+        <label class="hint" for="entry-dir">Arah IN (counting)</label>
+        <select id="entry-dir">
+          <option value="up">Naik (bawah → atas)</option>
+          <option value="down">Turun (atas → bawah)</option>
+        </select>
+        <label class="hint" for="inbound-side">Sisi IN (lajur)</label>
+        <select id="inbound-side">
+          <option value="left">Kiri garis cyan = masuk</option>
+          <option value="right">Kanan garis cyan = masuk</option>
+        </select>
+        <div class="btn-row">
+          <button id="btn-reset" type="button" class="danger">Reset counter</button>
+        </div>
+        <div class="coords" id="line-coords">counting: —</div>
+        <div class="coords" id="lane-coords">lajur: —</div>
+        <div id="cal-status"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Klasifikasi Live (frame ini)</h2>
+        <div class="class-grid">
+          <div class="class-card motor"><div class="label">Motor</div><div class="live" id="live-motor">0</div><div class="in-out">IN: <span id="in-motor">0</span> · OUT: <span id="out-motor">0</span></div></div>
+          <div class="class-card mobil"><div class="label">Mobil</div><div class="live" id="live-mobil">0</div><div class="in-out">IN: <span id="in-mobil">0</span> · OUT: <span id="out-mobil">0</span></div></div>
+          <div class="class-card bus"><div class="label">Bus</div><div class="live" id="live-bus">0</div><div class="in-out">IN: <span id="in-bus">0</span> · OUT: <span id="out-bus">0</span></div></div>
+          <div class="class-card truck"><div class="label">Truck</div><div class="live" id="live-truck">0</div><div class="in-out">IN: <span id="in-truck">0</span> · OUT: <span id="out-truck">0</span></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Track Aktif</h2>
+        <div class="track-list" id="track-list"><div class="empty">Belum ada track stabil</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Crossing Terbaru</h2>
+        <div class="cross-list" id="cross-list"><div class="empty">Belum ada crossing</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GATE = 'A';
+    const wrap = document.getElementById('video-wrap');
+    const img = document.getElementById('dev-stream');
+    const canvas = document.getElementById('line-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let calibrateMode = false;
+    let clickStep = 0;
+    let editTarget = 'count';
+    let draftLine = null;
+    let draftLane = null;
+    let frameSize = { w: 2304, h: 1296 };
+    let dragHandle = null;
+
+    function activeLine() {
+      return editTarget === 'lane' ? draftLane : draftLine;
+    }
+
+    function setActiveLine(vals) {
+      if (editTarget === 'lane') draftLane = vals;
+      else draftLine = vals;
+    }
+
+    function contentRect() {
+      const nw = img.naturalWidth || frameSize.w;
+      const nh = img.naturalHeight || frameSize.h;
+      const cw = img.clientWidth;
+      const ch = img.clientHeight;
+      const scale = Math.min(cw / nw, ch / nh);
+      const dw = nw * scale;
+      const dh = nh * scale;
+      return {
+        left: (cw - dw) / 2,
+        top: (ch - dh) / 2,
+        scale,
+        nw, nh, dw, dh
+      };
+    }
+
+    function clientToFrame(clientX, clientY) {
+      const br = img.getBoundingClientRect();
+      const c = contentRect();
+      const x = (clientX - br.left - c.left) / c.scale * (frameSize.w / c.nw);
+      const y = (clientY - br.top - c.top) / c.scale * (frameSize.h / c.nh);
+      return {
+        x: Math.round(Math.max(0, Math.min(frameSize.w - 1, x))),
+        y: Math.round(Math.max(0, Math.min(frameSize.h - 1, y))),
+      };
+    }
+
+    function frameToCanvas(x, y) {
+      const c = contentRect();
+      const sx = canvas.width / img.clientWidth;
+      const sy = canvas.height / img.clientHeight;
+      return {
+        x: (c.left + x / frameSize.w * c.nw * c.scale) * sx,
+        y: (c.top + y / frameSize.h * c.nh * c.scale) * sy,
+      };
+    }
+
+    function resizeCanvas() {
+      const r = wrap.getBoundingClientRect();
+      canvas.width = r.width;
+      canvas.height = r.height;
+      drawOverlay();
+    }
+
+    function drawOneLine(line, color, withHandles) {
+      if (!line || line.length < 4) return;
+      const a = frameToCanvas(line[0], line[1]);
+      const b = frameToCanvas(line[2], line[3]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      if (!withHandles) return;
+      [a, b].forEach((p) => {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      });
+    }
+
+    function drawOverlay() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawOneLine(draftLine, '#ff453a', calibrateMode && editTarget === 'count');
+      drawOneLine(draftLane, '#3dd6ff', calibrateMode && editTarget === 'lane');
+    }
+
+    function setStatus(text, ok = true) {
+      const el = document.getElementById('cal-status');
+      el.textContent = text;
+      el.style.color = ok ? 'var(--mobil)' : '#ff453a';
+    }
+
+    function updateLineLabel() {
+      document.getElementById('line-coords').textContent = draftLine
+        ? 'counting: [' + draftLine.join(', ') + ']'
+        : 'counting: —';
+      document.getElementById('lane-coords').textContent = draftLane
+        ? 'lajur: [' + draftLane.join(', ') + ']'
+        : 'lajur: —';
+    }
+
+    async function sendCalibrate({ persist = false, reset = true } = {}) {
+      const body = {
+        counting_line: draftLine,
+        entry_direction: document.getElementById('entry-dir').value,
+        lane_divider: draftLane,
+        inbound_side: document.getElementById('inbound-side').value,
+        persist,
+        reset_counts: reset,
+      };
+      const res = await fetch('/api/dev/calibrate/' + GATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        const detail = err.detail;
+        throw new Error(typeof detail === 'string' ? detail : 'Gagal kalibrasi');
+      }
+      return res.json();
+    }
+
+    function updateUI(data) {
+      document.getElementById('meta-fps').textContent = (data.inference_fps || 0).toFixed(1);
+      document.getElementById('meta-det').textContent = data.detection_count || 0;
+      document.getElementById('meta-trk').textContent = data.track_count || 0;
+      if (data.frame_width && data.frame_height) {
+        frameSize = { w: data.frame_width, h: data.frame_height };
+        document.getElementById('meta-res').textContent = data.frame_width + '×' + data.frame_height;
+      }
+
+      if (!calibrateMode && Array.isArray(data.counting_line) && data.counting_line.length === 4) {
+        draftLine = data.counting_line.map(Number);
+      }
+      if (!calibrateMode && Array.isArray(data.lane_divider) && data.lane_divider.length === 4) {
+        draftLane = data.lane_divider.map(Number);
+      }
+      if (!calibrateMode) {
+        updateLineLabel();
+        drawOverlay();
+      }
+      if (data.entry_direction && !calibrateMode) {
+        document.getElementById('entry-dir').value = data.entry_direction;
+      }
+      if (data.inbound_side && !calibrateMode) {
+        document.getElementById('inbound-side').value = data.inbound_side;
+      }
+
+      const live = data.live_class_counts || {};
+      ['motor','mobil','bus','truck'].forEach(c => {
+        document.getElementById('live-' + c).textContent = live[c] || 0;
+      });
+
+      const cin = data.counts_in || {};
+      const cout = data.counts_out || {};
+      ['motor','mobil','bus','truck'].forEach(c => {
+        document.getElementById('in-' + c).textContent = cin[c] || 0;
+        document.getElementById('out-' + c).textContent = cout[c] || 0;
+      });
+
+      const tracks = data.tracks || [];
+      const trackList = document.getElementById('track-list');
+      if (tracks.length === 0) {
+        trackList.innerHTML = '<div class="empty">Belum ada track stabil</div>';
+      } else {
+        trackList.innerHTML = tracks.map(t =>
+          `<div class="track-item">
+            <span><span class="track-cls ${t.class_name}">#${t.track_id} ${t.class_name.toUpperCase()}</span></span>
+            <span class="track-conf">${(t.confidence*100).toFixed(0)}% · age:${t.age}</span>
+          </div>`
+        ).join('');
+      }
+
+      const crosses = data.recent_crossings || [];
+      const crossList = document.getElementById('cross-list');
+      if (crosses.length === 0) {
+        crossList.innerHTML = '<div class="empty">Belum ada crossing</div>';
+      } else {
+        crossList.innerHTML = [...crosses].reverse().map(c =>
+          `<div class="cross-item">
+            <span class="dir-${c.direction}">${c.direction.toUpperCase()}</span>
+            · ${c.class_name.toUpperCase()} #${c.track_id} (${(c.confidence*100).toFixed(0)}%)
+          </div>`
+        ).join('');
+      }
+    }
+
+    function nearestHandle(pt) {
+      const line = activeLine();
+      if (!line) return null;
+      const handles = [
+        { i: 0, p: { x: line[0], y: line[1] } },
+        { i: 1, p: { x: line[2], y: line[3] } },
+      ];
+      let best = null;
+      handles.forEach(h => {
+        const d = Math.hypot(h.p.x - pt.x, h.p.y - pt.y);
+        if (d < 40 && (!best || d < best.d)) best = { ...h, d };
+      });
+      return best;
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (!calibrateMode) return;
+      const pt = clientToFrame(e.clientX, e.clientY);
+      const handle = nearestHandle(pt);
+      if (handle) {
+        dragHandle = handle.i;
+        return;
+      }
+      const current = activeLine();
+      if (clickStep === 0) {
+        setActiveLine([pt.x, pt.y, pt.x, pt.y]);
+        clickStep = 1;
+        setStatus('Klik titik kedua');
+      } else {
+        current[2] = pt.x;
+        current[3] = pt.y;
+        setActiveLine(current);
+        clickStep = 0;
+        updateLineLabel();
+        drawOverlay();
+        sendCalibrate({ persist: false, reset: true }).then(() => {
+          setStatus((editTarget === 'lane' ? 'Garis lajur' : 'Garis counting') + ' diterapkan (belum disimpan)');
+        }).catch(err => setStatus(err.message, false));
+      }
+      updateLineLabel();
+      drawOverlay();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (dragHandle === null || !calibrateMode) return;
+      const pt = clientToFrame(e.clientX, e.clientY);
+      const line = activeLine() || [0, 0, 0, 0];
+      if (dragHandle === 0) {
+        line[0] = pt.x; line[1] = pt.y;
+      } else {
+        line[2] = pt.x; line[3] = pt.y;
+      }
+      setActiveLine(line);
+      updateLineLabel();
+      drawOverlay();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (dragHandle === null) return;
+      dragHandle = null;
+      sendCalibrate({ persist: false, reset: true }).then(() => {
+        setStatus('Garis diterapkan (belum disimpan ke file)');
+      }).catch(err => setStatus(err.message, false));
+    });
+
+    function setEditTarget(target) {
+      editTarget = target;
+      clickStep = 0;
+      document.getElementById('btn-mode-count').classList.toggle('active', target === 'count');
+      document.getElementById('btn-mode-lane').classList.toggle('active', target === 'lane');
+      drawOverlay();
+    }
+    document.getElementById('btn-mode-count').addEventListener('click', () => setEditTarget('count'));
+    document.getElementById('btn-mode-lane').addEventListener('click', () => setEditTarget('lane'));
+
+    document.getElementById('btn-calibrate').addEventListener('click', () => {
+      calibrateMode = !calibrateMode;
+      clickStep = 0;
+      wrap.classList.toggle('calibrate', calibrateMode);
+      document.getElementById('btn-calibrate').classList.toggle('active', calibrateMode);
+      document.getElementById('btn-calibrate').textContent = calibrateMode ? 'Selesai kalibrasi' : 'Mode kalibrasi';
+      setStatus(calibrateMode ? 'Klik dua titik, atau geser ujung garis yang aktif' : '');
+      drawOverlay();
+    });
+
+    document.getElementById('btn-apply').addEventListener('click', async () => {
+      try {
+        await sendCalibrate({ persist: false, reset: true });
+        setStatus('Garis diterapkan');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    document.getElementById('btn-save').addEventListener('click', async () => {
+      try {
+        await sendCalibrate({ persist: true, reset: false });
+        setStatus('Tersimpan ke config/settings.yaml');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    document.getElementById('inbound-side').addEventListener('change', async () => {
+      try {
+        await sendCalibrate({ persist: false, reset: true });
+        setStatus('Sisi IN lajur diperbarui');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    document.getElementById('entry-dir').addEventListener('change', async () => {
+      try {
+        await sendCalibrate({ persist: false, reset: true });
+        setStatus('Arah IN diperbarui');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', async () => {
+      try {
+        await sendCalibrate({ persist: false, reset: true });
+        setStatus('Counter direset');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(proto + '//' + location.host + '/api/dev/ws/' + GATE);
+      ws.onopen = () => {
+        document.getElementById('ws-status').textContent = '● Live';
+        document.getElementById('ws-status').style.color = '#3dd68c';
+      };
+      ws.onmessage = e => {
+        try { updateUI(JSON.parse(e.data)); } catch(err) {}
+      };
+      ws.onclose = () => {
+        document.getElementById('ws-status').textContent = '● Reconnecting...';
+        document.getElementById('ws-status').style.color = '#ff453a';
+        setTimeout(connectWS, 2000);
+      };
+    }
+    connectWS();
+
+    img.addEventListener('error', () => {
+      document.getElementById('video-offline').style.display = 'flex';
+    });
+    img.addEventListener('load', () => {
+      document.getElementById('video-offline').style.display = 'none';
+      resizeCanvas();
+    });
+    window.addEventListener('resize', resizeCanvas);
+    new ResizeObserver(resizeCanvas).observe(wrap);
+  </script>
+</body>
+</html>

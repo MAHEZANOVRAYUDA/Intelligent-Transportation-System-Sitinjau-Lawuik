@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sitinjau Laut — Traffic Monitoring</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3a4f;
+      --text: #e8edf4;
+      --muted: #8899aa;
+      --lancar: #22c55e;
+      --padat: #f59e0b;
+      --macet: #ef4444;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    header .subtitle { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; }
+    .badge-live {
+      display: flex; align-items: center; gap: 0.75rem;
+      font-size: 0.8rem; color: var(--muted);
+    }
+    .header-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .btn-reset {
+      padding: 0.45rem 0.85rem;
+      background: transparent;
+      border: 1px solid var(--macet);
+      color: var(--macet);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    .btn-reset:hover { background: rgba(239, 68, 68, 0.12); }
+    .btn-reset:disabled { opacity: 0.5; cursor: wait; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lancar); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    main { padding: 1.5rem 2rem; max-width: 1400px; margin: 0 auto; }
+
+    /* Status hero */
+    .status-hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      text-align: center;
+      margin-bottom: 1.5rem;
+      transition: border-color 0.5s;
+    }
+    .status-hero.lancar { border-color: var(--lancar); }
+    .status-hero.padat { border-color: var(--padat); }
+    .status-hero.macet { border-color: var(--macet); }
+    .status-label { font-size: 3rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .status-hero.lancar .status-label { color: var(--lancar); }
+    .status-hero.padat .status-label { color: var(--padat); }
+    .status-hero.macet .status-label { color: var(--macet); }
+    .util-bar-wrap { margin: 1.5rem auto 0.5rem; max-width: 500px; }
+    .util-bar { height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; }
+    .util-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease, background 0.5s; }
+    .util-text { font-size: 0.9rem; color: var(--muted); margin-top: 0.5rem; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .card h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem; }
+    .stat-value { font-size: 2rem; font-weight: 700; }
+    .stat-detail { font-size: 0.85rem; color: var(--muted); margin-top: 0.25rem; }
+
+    .vehicle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .vehicle-item { text-align: center; padding: 0.75rem; background: var(--surface2); border-radius: 8px; }
+    .vehicle-item .icon { font-size: 1.5rem; }
+    .vehicle-item .count { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
+    .vehicle-item .label { font-size: 0.75rem; color: var(--muted); }
+    .vehicle-item .sub { font-size: 0.65rem; color: var(--muted); margin-top: 0.2rem; }
+
+    /* Live cam section */
+    .cam-section { margin-top: 1.5rem; }
+    .cam-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .cam-tab {
+      padding: 0.5rem 1.25rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-family: inherit;
+    }
+    .cam-tab.active { background: var(--accent); border-color: var(--accent); }
+    .cam-viewer {
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 16/9;
+      position: relative;
+      border: 1px solid var(--border);
+    }
+    .cam-viewer img { width: 100%; height: 100%; object-fit: contain; }
+    .cam-offline {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 0.9rem;
+    }
+    .cam-info { margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted); }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      border-top: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 640px) {
+      header { flex-direction: column; gap: 0.5rem; text-align: center; }
+      main { padding: 1rem; }
+      .vehicle-grid { grid-template-columns: repeat(2, 1fr); }
+      .status-label { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Monitoring Jalan Sitinjau Laut</h1>
+      <div class="subtitle">Dinas Perhubungan Provinsi Sumatera Barat</div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn-reset" id="btn-reset">Hapus data</button>
+      <div class="badge-live">
+        <div class="dot" id="ws-dot"></div>
+        <span id="ws-status">Menghubungkan...</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="status-hero lancar" id="status-hero">
+      <div class="status-label" id="status-text">LANCAR</div>
+      <div class="util-bar-wrap">
+        <div class="util-bar"><div class="util-fill" id="util-fill" style="width:0%; background:var(--lancar)"></div></div>
+        <div class="util-text"><span id="util-pct">0</span>% kapasitas terpakai &mdash; <span id="vol-text">0 / 56.100 meter-lajur</span></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Kendaraan di Jalan (A→B)</h3>
+        <div class="stat-value" id="on-road-total">0</div>
+        <div class="stat-detail">Estimasi kendaraan antara Gerbang A dan B</div>
+      </div>
+      <div class="card">
+        <h3>Total Masuk Hari Ini</h3>
+        <div class="stat-value" id="today-total">0</div>
+        <div class="stat-detail">Akumulasi dari Gerbang A</div>
+      </div>
+      <div class="card">
+        <h3>Stream Status</h3>
+        <div class="stat-value" id="stream-state">—</div>
+        <div class="stat-detail" id="stream-fps">Menunggu koneksi kamera</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Kendaraan per Jenis</h3>
+      <div class="vehicle-grid" style="margin-top:0.5rem">
+        <div class="vehicle-item"><div class="icon">🏍</div><div class="count" id="cnt-motor">0</div><div class="label">Motor</div><div class="sub" id="corr-motor">hari ini masuk 0 · keluar 0</div></div>
+        <div class="vehicle-item"><div class="icon">🚗</div><div class="count" id="cnt-mobil">0</div><div class="label">Mobil</div><div class="sub" id="corr-mobil">hari ini masuk 0 · keluar 0</div></div>
+        <div class="vehicle-item"><div class="icon">🚌</div><div class="count" id="cnt-bus">0</div><div class="label">Bus</div><div class="sub" id="corr-bus">hari ini masuk 0 · keluar 0</div></div>
+        <div class="vehicle-item"><div class="icon">🚛</div><div class="count" id="cnt-truck">0</div><div class="label">Truck</div><div class="sub" id="corr-truck">hari ini masuk 0 · keluar 0</div></div>
+      </div>
+      <div class="stat-detail" style="margin-top:0.75rem">Angka besar = kendaraan yang sedang di ruas A→B (masuk +1, keluar −1). Subteks = akumulasi tersimpan hari ini.</div>
+    </div>
+
+    <div class="cam-section">
+      <div class="cam-tabs">
+        <button class="cam-tab active" data-gate="A">Gerbang A — Padang</button>
+        <button class="cam-tab" data-gate="B">Gerbang B — Solok</button>
+      </div>
+      <div class="cam-viewer">
+        <img id="cam-feed" src="/api/stream/A" alt="Live Camera">
+        <div class="cam-offline" id="cam-offline" style="display:none">Kamera offline — menghubungkan ulang...</div>
+      </div>
+      <div class="cam-info">Live stream tanpa overlay deteksi. Stream MJPEG low-latency dari kamera IP. <a href="/dev" style="color:var(--accent)">Buka Dev Mode →</a></div>
+    </div>
+  </main>
+
+  <footer>
+    Sitinjau Laut Traffic Monitoring System v0.1.0 &mdash; Prototype Phase
+  </footer>
+
+  <script>
+    const statusColors = { lancar: 'var(--lancar)', padat: 'var(--padat)', macet: 'var(--macet)' };
+
+    function updateDashboard(data) {
+      const hero = document.getElementById('status-hero');
+      const status = data.status || 'lancar';
+      hero.className = 'status-hero ' + status;
+      document.getElementById('status-text').textContent = status.toUpperCase();
+
+      const pct = data.utilization_percent || 0;
+      document.getElementById('util-pct').textContent = pct.toFixed(1);
+      document.getElementById('util-fill').style.width = Math.min(pct, 100) + '%';
+      document.getElementById('util-fill').style.background = statusColors[status] || statusColors.lancar;
+      document.getElementById('vol-text').textContent =
+        (data.volume_used_meter_lajur || 0).toLocaleString('id-ID') +
+        ' / ' + (data.capacity_meter_lajur || 56100).toLocaleString('id-ID') + ' meter-lajur';
+
+      const today = data.today_crossings || {};
+      const savedIn = today.in || {};
+      const savedOut = today.out || {};
+      const onRoad = data.on_road || {};
+      ['motor', 'mobil', 'bus', 'truck'].forEach((cls) => {
+        document.getElementById('cnt-' + cls).textContent = onRoad[cls] || 0;
+        document.getElementById('corr-' + cls).textContent =
+          'hari ini masuk ' + (savedIn[cls] || 0) + ' · keluar ' + (savedOut[cls] || 0);
+      });
+      document.getElementById('on-road-total').textContent = data.on_road_total || 0;
+      document.getElementById('today-total').textContent = today.total_in || 0;
+
+      const streams = data.streams || {};
+      const streamA = streams.A || {};
+      document.getElementById('stream-state').textContent = (streamA.state || 'offline').toUpperCase();
+      document.getElementById('stream-fps').textContent = streamA.fps
+        ? streamA.fps + ' FPS · ' + (streamA.frames || 0).toLocaleString() + ' frames'
+        : 'Menunggu koneksi kamera';
+    }
+
+    // WebSocket real-time
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(proto + '//' + location.host + '/ws/monitoring');
+
+      ws.onopen = () => {
+        document.getElementById('ws-status').textContent = 'Terhubung';
+        document.getElementById('ws-dot').style.background = 'var(--lancar)';
+      };
+      ws.onmessage = (e) => {
+        try { updateDashboard(JSON.parse(e.data)); } catch(err) {}
+      };
+      ws.onclose = () => {
+        document.getElementById('ws-status').textContent = 'Terputus — reconnect...';
+        document.getElementById('ws-dot').style.background = 'var(--macet)';
+        setTimeout(connectWS, 3000);
+      };
+    }
+    fetch('/api/monitoring/current')
+      .then((r) => r.json())
+      .then(updateDashboard)
+      .catch(() => {});
+    connectWS();
+
+    // Live cam tab switching
+    let activeGate = 'A';
+    document.querySelectorAll('.cam-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.cam-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeGate = tab.dataset.gate;
+        const img = document.getElementById('cam-feed');
+        img.src = '/api/stream/' + activeGate + '?t=' + Date.now();
+      });
+    });
+
+    // Cam error handling
+    document.getElementById('cam-feed').addEventListener('error', () => {
+      document.getElementById('cam-offline').style.display = 'flex';
+    });
+    document.getElementById('cam-feed').addEventListener('load', () => {
+      document.getElementById('cam-offline').style.display = 'none';
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', async () => {
+      const ok = confirm(
+        'Hapus semua data monitoring (crossing, snapshot, hitungan koridor)? Tindakan ini tidak bisa dibatalkan.'
+      );
+      if (!ok) return;
+      const btn = document.getElementById('btn-reset');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/monitoring/reset', { method: 'POST' });
+        if (!res.ok) throw new Error('reset gagal');
+        const fresh = await fetch('/api/monitoring/current');
+        if (fresh.ok) updateDashboard(await fresh.json());
+      } catch (err) {
+        alert('Gagal menghapus data. Coba lagi setelah server berjalan.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

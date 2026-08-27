@@ -1,0 +1,101 @@
+# Konfigurasi Sistem Monitoring Jalan Sitinjau Laut
+# Dinas Perhubungan Provinsi Sumatera Barat
+
+project:
+  name: "Sitinjau Laut Traffic Monitoring"
+  version: "0.1.0"
+
+# Spesifikasi jalan A → B
+road:
+  length_km: 16.5
+  two_lane_percent: 65      # 65% jalan muat 2 kendaraan sejajar
+  six_lane_percent: 35      # 35% jalan muat 6 kendaraan sejajar
+  total_capacity_meter_lajur: 56100
+
+# Panjang kendaraan + gap (meter)
+vehicles:
+  mobil:
+    length_m: 6.0
+    coco_classes: ["car"]
+  motor:
+    length_m: 2.5
+    coco_classes: ["motorcycle", "bicycle"]
+  bus:
+    length_m: 14.0
+    coco_classes: ["bus"]
+  truck:
+    length_m: 12.0
+    coco_classes: ["truck"]
+
+# Threshold status lalu lintas (% kapasitas terpakai)
+traffic_status:
+  lancar_max: 50
+  padat_max: 75
+  # di atas padat_max = macet
+
+# Gerbang
+gates:
+  A:
+    name: "Gerbang A (Padang)"
+    direction: "A_to_B"
+    # Garis virtual counting [x1, y1, x2, y2] — kalibrasi setelah kamera terpasang
+    # Default untuk resolusi ~2304x1296 (kamera Bardi prototype)
+    counting_line: [37, 794, 2303, 786]
+    entry_direction: up
+    # Garis pemisah lajur (cyan) — kalibrasi dari /dev
+    lane_divider: [1110, 0, 1189, 1286]
+    inbound_side: right
+  B:
+    name: "Gerbang B (Perbatasan Solok)"
+    direction: "B_to_A"
+    counting_line: [100, 400, 900, 400]
+    entry_direction: "down"
+
+# Model deteksi
+detection:
+  model_path: "models/yolov8n.pt"
+  confidence: 0.22
+  iou: 0.5
+  imgsz: 960
+  device: "cpu"  # cpu | cuda | coral (saat deploy)
+  classes: ["motor", "mobil", "bus", "truck"]
+
+# Tracking & counting (tuning akurasi)
+# min_count_confidence harus ≤ detection.confidence agar bbox yang tampil bisa dihitung.
+# Umur/confidence hanya menunda simpan, bukan membuang crossing yang sudah terjadi.
+tracking:
+  max_distance: 200        # pixel — sesuaikan resolusi kamera
+  max_disappeared: 20      # frame hilang sebelum track dihapus
+  min_hits: 3              # frame stabil sebelum track ditampilkan
+  min_track_age: 3         # frame minimum sebelum crossing dikomit (pending jika lebih muda)
+  min_count_confidence: 0.20
+
+# Stream video
+stream:
+  # Resolusi output live cam web (lebih kecil = lebih lancar)
+  output_width: 1280
+  output_height: 720
+  fps: 15
+  # Buffer minimal untuk kurangi latency
+  buffer_size: 1
+  # JPEG quality untuk MJPEG stream (1-100)
+  jpeg_quality: 80
+  reconnect_delay_sec: 5
+  max_reconnect_attempts: 0  # 0 = unlimited
+
+# Estimasi waktu tempuh untuk mode single-gate (detik)
+# 16.5 km @ 40 km/jam ≈ 1485 detik (~25 menit)
+transit:
+  avg_speed_kmh: 40
+  estimated_transit_sec: 1485
+
+# Database
+database:
+  url: "sqlite:///./data/sitinjau_laut.db"
+  retention_days: 90
+
+# API
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]

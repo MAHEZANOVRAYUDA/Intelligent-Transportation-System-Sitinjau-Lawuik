@@ -9,7 +9,7 @@ Dokumen ini mendefinisikan batasan kualitas, ambang performa, dan standar arsite
 
 | Dimensi | Ambang Batas (Floor) | Enforcement / Tool | Justifikasi Teknis |
 | :--- | :--- | :--- | :--- |
-| **Test Suite Pass Rate** | **100% (0 failure)** | `pytest` | Seluruh 36+ unit & integration test wajib lulus sebelum merge/deploy. |
+| **Test Suite Pass Rate** | **100% (0 failure)** | `pytest` | Seluruh 49 unit & integration test wajib lulus sebelum merge/deploy. |
 | **Schema Validation** | **Pydantic v2 (Strict)** | `pydantic>=2.5.0` | Semua payload config (`settings.yaml`) dan endpoint API (`/api/dev/*`) wajib tervalidasi skema runtime tanpa tipe `Any`. |
 | **Formula Integrity** | **PKJI 2023 & SE No. 21/2023** | `tests/test_pkji_api.py`, `tests/test_occupancy.py` | Rumus kapasitas praktis $C = C_0 \times FC_w \times FC_{sp} \times FC_{sf}$ dan $DS = Q/C$ tidak boleh diubah tanpa justifikasi regulasi Bina Marga. |
 | **Tracking Stability** | **Quadratic Consistency $D^{**}_{ij}$** | `tests/test_association.py` | Asosiasi Kalman wajib mempertahankan ID objek pada frame skip dan deviasi IoU tinggi. |

@@ -1,0 +1,11 @@
+# Dependensi Ringan untuk Node Edge Raspberry Pi 5 (RAM 2GB) + Hailo-8L
+# Bebas dari PyTorch / Torchvision / CUDA untuk efisiensi memori (<150MB RAM footprint).
+# Driver Hailo (pyhailort) diinstal dari repositori apt: sudo apt install hailo-all
+
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.0.0
+pyyaml>=6.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0

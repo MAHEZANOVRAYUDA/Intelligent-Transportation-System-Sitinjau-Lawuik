@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import threading
 import time
@@ -13,7 +14,7 @@ import cv2
 import numpy as np
 
 from src.analytics.density import RoadOccupancyManager
-from src.capture.stream_manager import RTSPStreamManager, StreamRegistry, StreamState
+from src.capture.stream_manager import StreamRegistry, StreamState
 from src.config import get_gate_config, get_settings, persist_gate_calibration
 from src.counting.line_counter import CrossingDirection, LineCounter
 from src.detection.detector import VehicleDetector
@@ -68,8 +69,11 @@ class DetectionWorker:
         self._thread: threading.Thread | None = None
         self._snapshot_interval = 60
         self._last_snapshot = 0.0
-        self._process_every_n = 3
-        self._frame_skip_counter = 0
+        self._detect_every_n = 2
+        self._detect_counters: dict[str, int] = {}
+        self._last_detections: dict[str, list[dict]] = {}
+        self._last_stable_tracks: dict[str, list] = {}
+        self._last_frame_number: dict[str, int] = {}
         self._infer_times: dict[str, list[float]] = {}
 
         raw, env = get_settings()
@@ -77,9 +81,15 @@ class DetectionWorker:
         tracking = raw.get("tracking", {})
         self._max_distance = float(tracking.get("max_distance", 200))
         self._max_disappeared = int(tracking.get("max_disappeared", 20))
-        self._min_hits = int(tracking.get("min_hits", 3))
-        self._min_track_age = int(tracking.get("min_track_age", 3))
-        self._min_confidence = float(tracking.get("min_count_confidence", 0.20))
+        self._min_hits = int(tracking.get("min_hits", 1))
+        self._min_track_age = int(tracking.get("min_track_age", 1))
+        self._min_confidence = float(tracking.get("min_count_confidence", 0.05))
+        self._lambda_consistency = float(tracking.get("lambda_consistency", 5.0))
+        self._association = str(tracking.get("association", "quadratic"))
+        self._mahalanobis_gate = float(tracking.get("mahalanobis_gate", 9.4877))
+        self._iou_match_min = float(tracking.get("iou_match_min", 0.25))
+        self._detect_every_n = max(1, int(tracking.get("detect_every_n", 2)))
+        self._strict_lane_filter = bool(tracking.get("strict_lane_filter", False))
         self._jpeg_quality = int(raw.get("stream", {}).get("jpeg_quality", 80))
 
         gate_b_url = env.gate_b_rtsp_url
@@ -101,6 +111,10 @@ class DetectionWorker:
                     max_disappeared=self._max_disappeared,
                     max_distance=self._max_distance,
                     min_hits=self._min_hits,
+                    lambda_consistency=self._lambda_consistency,
+                    association=self._association,
+                    mahalanobis_gate=self._mahalanobis_gate,
+                    iou_match_min=self._iou_match_min,
                 )
                 self._counters[gate_id] = LineCounter(
                     line=gate_cfg.counting_line,
@@ -110,14 +124,19 @@ class DetectionWorker:
                     min_confidence=self._min_confidence,
                     lane_divider=gate_cfg.lane_divider,
                     inbound_side=gate_cfg.inbound_side,
+                    strict_lane_filter=self._strict_lane_filter,
                 )
                 self._debug_states[gate_id] = GateDebugState()
                 self._infer_times[gate_id] = []
+                self._detect_counters[gate_id] = 0
+                self._last_detections[gate_id] = []
+                self._last_stable_tracks[gate_id] = []
+                self._last_frame_number[gate_id] = -1
 
         self._running = True
         self._thread = threading.Thread(target=self._loop, name="detection-worker", daemon=True)
         self._thread.start()
-        logger.info("Detection worker started (enabled=%s)", self._enabled)
+        logger.info("Detection worker started (enabled=%s, association=%s, lambda=%.2f)", self._enabled, self._association, self._lambda_consistency)
 
     def stop(self) -> None:
         self._running = False
@@ -229,7 +248,10 @@ class DetectionWorker:
         inference_fps: float,
         counter: LineCounter,
     ) -> None:
-        stable_tracks = [t for t in tracks if t.age >= self._min_hits]
+        stable_tracks = [
+            t for t in tracks
+            if t.age >= self._min_hits and getattr(t, "frames_since_seen", 0) == 0
+        ]
         live_counts: dict[str, int] = {}
         for t in stable_tracks:
             cls = t.stable_class
@@ -323,10 +345,9 @@ class DetectionWorker:
                 packet = stream.get_latest_frame()
                 if packet.frame is None:
                     continue
-
-                self._frame_skip_counter += 1
-                if self._frame_skip_counter % self._process_every_n != 0:
+                if packet.frame_number == self._last_frame_number.get(gate_id, -1):
                     continue
+                self._last_frame_number[gate_id] = packet.frame_number
 
                 frame = packet.frame
                 counter = self._counters.get(gate_id)
@@ -335,49 +356,85 @@ class DetectionWorker:
                 if not self._enabled or counter is None or tracker is None:
                     continue
 
-                t0 = time.time()
-                detections = self._detector.detect(frame)
-                infer_ms = time.time() - t0
+                self._detect_counters[gate_id] = self._detect_counters.get(gate_id, 0) + 1
+                run_detect = self._detect_counters[gate_id] % self._detect_every_n == 0
+                times = self._infer_times.get(gate_id, [])
 
-                times = self._infer_times[gate_id]
-                times.append(infer_ms)
-                if len(times) > 30:
-                    times.pop(0)
-                avg_ms = sum(times) / len(times) if times else infer_ms
-                inference_fps = 1.0 / avg_ms if avg_ms > 0 else 0.0
+                if run_detect:
+                    t0 = time.time()
+                    detections = self._detector.detect(frame)
+                    infer_ms = time.time() - t0
+                    self._last_detections[gate_id] = detections
+                    times = self._infer_times[gate_id]
+                    times.append(infer_ms)
+                    if len(times) > 30:
+                        times.pop(0)
 
-                all_tracks = tracker.update(detections)
-                events = counter.update(all_tracks)
+                    avg_ms = sum(times) / len(times) if times else max(infer_ms, 1e-3)
+                    inference_fps = 1.0 / avg_ms if avg_ms > 0 else 0.0
 
-                for event in events:
-                    save_crossing(
-                        gate_id=gate_id,
-                        direction=event.direction.value,
-                        class_name=event.class_name,
-                        confidence=event.confidence,
-                        track_id=event.track_id,
+                    all_tracks = tracker.update(detections)
+                    # Hanya ambil track terkonfirmasi deteksi YOLO di frame ini (frames_since_seen == 0) dan stabil (age >= min_hits)
+                    stable_tracks = [
+                        copy.deepcopy(t)
+                        for t in all_tracks
+                        if t.age >= self._min_hits and getattr(t, "frames_since_seen", 0) == 0
+                    ]
+                    self._last_stable_tracks[gate_id] = stable_tracks
+
+                    events = counter.update(all_tracks)
+
+                    for event in events:
+                        save_crossing(
+                            gate_id=gate_id,
+                            direction=event.direction.value,
+                            class_name=event.class_name,
+                            confidence=event.confidence,
+                            track_id=event.track_id,
+                        )
+
+                        if event.direction == CrossingDirection.IN:
+                            if gate_id == "A":
+                                # Gerbang A: Kendaraan masuk koridor menuju Solok (menanjak)
+                                self.occupancy.register_entry(event.class_name, gate="A", direction="menanjak")
+                            elif gate_id == "B":
+                                # Gerbang B: Kendaraan masuk koridor menuju Padang (menurun)
+                                self.occupancy.register_entry(event.class_name, gate="B", direction="menurun")
+                        else:
+                            if gate_id == "B":
+                                # Gerbang B: Kendaraan keluar koridor tiba di Solok (setelah menanjak)
+                                self.occupancy.register_exit(event.class_name, gate="B", direction="menanjak")
+                            elif gate_id == "A":
+                                # Gerbang A: Kendaraan keluar koridor tiba di Padang (setelah menurun)
+                                self.occupancy.register_exit(event.class_name, gate="A", direction="menurun")
+
+                    self._update_debug(
+                        gate_id,
+                        frame,
+                        line=counter.line,
+                        detections=detections,
+                        tracks=stable_tracks,
+                        inference_fps=inference_fps,
+                        counter=counter,
                     )
+                else:
+                    # Frame skip: tracker dan counter TIDAK di-update agar tidak memicu miss semu / Kalman drift
+                    # Bounding box deteksi terakhir ditahan pada posisinya di atas frame video terbaru
+                    avg_ms = sum(times) / len(times) if times else 0.0
+                    inference_fps = 1.0 / avg_ms if avg_ms > 0 else 0.0
 
-                    if event.direction == CrossingDirection.IN:
-                        if gate_id == "A":
-                            self.occupancy.register_entry(event.class_name, gate="A")
-                        elif gate_id == "B":
-                            self.occupancy.register_entry(event.class_name, gate="B")
-                    else:
-                        if gate_id == "B":
-                            self.occupancy.register_exit(event.class_name, gate="B")
-                        elif gate_id == "A":
-                            self.occupancy.register_exit(event.class_name, gate="A")
+                    held_detections = self._last_detections.get(gate_id, [])
+                    held_tracks = self._last_stable_tracks.get(gate_id, [])
 
-                self._update_debug(
-                    gate_id,
-                    frame,
-                    line=counter.line,
-                    detections=detections,
-                    tracks=all_tracks,
-                    inference_fps=inference_fps,
-                    counter=counter,
-                )
+                    self._update_debug(
+                        gate_id,
+                        frame,
+                        line=counter.line,
+                        detections=held_detections,
+                        tracks=held_tracks,
+                        inference_fps=inference_fps,
+                        counter=counter,
+                    )
 
             now = time.time()
             if now - self._last_snapshot >= self._snapshot_interval:
@@ -396,6 +453,8 @@ class DetectionWorker:
         for tracker in self._trackers.values():
             tracker.reset()
         self.occupancy.reset()
+        self._last_detections.clear()
+        self._last_stable_tracks.clear()
         logger.info("Runtime counts, occupancy, and tracks reset")
 
     def get_counter_stats(self) -> dict:

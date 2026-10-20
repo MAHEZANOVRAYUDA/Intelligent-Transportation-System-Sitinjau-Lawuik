@@ -1,6 +1,7 @@
 # Environment & secrets
 .env
 .env.local
+.env.*.local
 
 # Python
 __pycache__/
@@ -14,22 +15,34 @@ env/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
-# Models (download separately)
+# Models
+*.pt
+*.onnx
+*.tflite
 models/*.pt
 models/*.onnx
 models/*.tflite
 !models/.gitkeep
+!models/yolov8n.hef
 
-# Data
+# Data & Buffers
 data/frames/*
 !data/frames/.gitkeep
 data/recordings/*
 !data/recordings/.gitkeep
+data/*.db
+data/*.sqlite3
 
 # Database
 *.db
 *.sqlite3
+
+# Agent & Knowledge Graph Tools
+.agents/
+graphify-out/
+user_repo_reference/
 
 # IDE
 .vscode/

@@ -1,7 +1,6 @@
-"""Database models and persistence."""
-
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine, func
@@ -30,7 +29,7 @@ class TrafficSnapshotRecord(Base):
     __tablename__ = "traffic_snapshots"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=datetime.now, index=True)
     motor_on_road = Column(Integer, default=0)
     mobil_on_road = Column(Integer, default=0)
     bus_on_road = Column(Integer, default=0)
@@ -75,6 +74,18 @@ def get_session() -> Session:
     return _SessionLocal()
 
 
+_today_cache: dict | None = None
+_today_cache_date: str | None = None
+_cache_lock = threading.Lock()
+
+
+def invalidate_today_cache() -> None:
+    global _today_cache, _today_cache_date
+    with _cache_lock:
+        _today_cache = None
+        _today_cache_date = None
+
+
 def save_crossing(
     gate_id: str,
     direction: str,
@@ -96,6 +107,23 @@ def save_crossing(
         session.commit()
     finally:
         session.close()
+
+    # Perbarui in-memory cache secara atomik (O(1), zero disk I/O)
+    global _today_cache, _today_cache_date
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    with _cache_lock:
+        if _today_cache is not None and _today_cache_date == today_str:
+            target = _today_cache["in"] if direction == "in" else _today_cache["out"]
+            if class_name in target:
+                target[class_name] += 1
+                _today_cache["by_class"][class_name] = _today_cache["in"][class_name] + _today_cache["out"][class_name]
+                if direction == "in":
+                    _today_cache["total_in"] += 1
+                else:
+                    _today_cache["total_out"] += 1
+        else:
+            _today_cache = None
+            _today_cache_date = None
 
 
 def save_snapshot(snapshot_data: dict) -> None:
@@ -147,6 +175,7 @@ def get_recent_snapshots(limit: int = 60) -> list[dict]:
 
 def clear_all_records() -> dict[str, int]:
     """Hapus semua event crossing, snapshot, dan agregat jam-an."""
+    invalidate_today_cache()
     session = get_session()
     try:
         n_cross = session.query(VehicleCrossing).delete()
@@ -165,8 +194,7 @@ def clear_all_records() -> dict[str, int]:
         session.close()
 
 
-def get_today_crossings() -> dict:
-    """Akumulasi event tersimpan hari ini (waktu lokal), per arah dan kelas."""
+def _load_today_crossings_from_db() -> dict:
     empty = {"motor": 0, "mobil": 0, "bus": 0, "truck": 0}
     counts_in = dict(empty)
     counts_out = dict(empty)
@@ -197,3 +225,29 @@ def get_today_crossings() -> dict:
         }
     finally:
         session.close()
+
+
+def get_today_crossings() -> dict:
+    """
+    Akumulasi event tersimpan hari ini (waktu lokal), per arah dan kelas.
+    Menggunakan in-memory cache dengan pembaruan atomik O(1) agar tidak
+    memblokir event loop async FastAPI (zero disk I/O di loop WebSocket 1Hz).
+    """
+    global _today_cache, _today_cache_date
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    with _cache_lock:
+        if _today_cache is None or _today_cache_date != today_str:
+            _today_cache = _load_today_crossings_from_db()
+            _today_cache_date = today_str
+        # Kembalikan salinan snapshot agar aman dari mutasi eksternal
+        c_in = dict(_today_cache["in"])
+        c_out = dict(_today_cache["out"])
+        by_cls = dict(_today_cache["by_class"])
+        return {
+            "in": c_in,
+            "out": c_out,
+            "by_class": by_cls,
+            "total_in": _today_cache["total_in"],
+            "total_out": _today_cache["total_out"],
+        }

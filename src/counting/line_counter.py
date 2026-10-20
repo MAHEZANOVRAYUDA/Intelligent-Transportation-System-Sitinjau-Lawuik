@@ -42,9 +42,9 @@ class LineCounter:
     """
     Menghitung kendaraan yang melewati garis virtual.
 
-    Ambang umur/confidence menunda penyimpanan sampai track lebih stabil,
-    tetapi crossing yang sudah terjadi tidak dibuang: disimpan sebagai pending
-    dan dikomit saat track memenuhi syarat atau saat track hilang.
+    Ambang umur/confidence hampir tidak menahan simpan: bbox yang sudah
+    menyeberang garis dikomit segera. Filter lajur default non-ketat agar
+    deteksi benar di overlay tidak terbuang hanya karena sisi cyan.
     """
 
     def __init__(
@@ -52,10 +52,11 @@ class LineCounter:
         line: list[int],
         entry_direction: str = "up",
         gate_id: str = "A",
-        min_track_age: int = 3,
-        min_confidence: float = 0.20,
+        min_track_age: int = 1,
+        min_confidence: float = 0.05,
         lane_divider: list[int] | None = None,
         inbound_side: str = "left",
+        strict_lane_filter: bool = False,
     ):
         self.line = line
         self.entry_direction = entry_direction
@@ -64,6 +65,7 @@ class LineCounter:
         self.min_confidence = min_confidence
         self.lane_divider = lane_divider
         self.inbound_side = inbound_side
+        self.strict_lane_filter = strict_lane_filter
         self.state = LineCounterState()
         self._prev_side: dict[int, str] = {}
         self._prev_point: dict[int, tuple[float, float]] = {}
@@ -113,9 +115,9 @@ class LineCounter:
 
     @staticmethod
     def _counting_point(track: Track) -> tuple[float, float]:
-        """Titik acuan: tengah-bawah bbox (lebih dekat ke aspal / garis)."""
+        """Pusat bbox: lebih stabil untuk arah IN/OUT daripada tepi bawah (bbox membesar saat mendekat)."""
         x1, y1, x2, y2 = track.bbox
-        return ((x1 + x2) / 2.0, float(y2))
+        return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
 
     @staticmethod
     def _segments_intersect(
@@ -163,7 +165,84 @@ class LineCounter:
         cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
         return "left" if cross >= 0 else "right"
 
+    def _lane_distance(self, px: float, py: float) -> float:
+        if not self.lane_divider or len(self.lane_divider) != 4:
+            return 0.0
+        x1, y1, x2, y2 = self.lane_divider
+        dx, dy = x2 - x1, y2 - y1
+        length = (dx * dx + dy * dy) ** 0.5
+        if length < 1e-6:
+            return 0.0
+        cross = dx * (py - y1) - dy * (px - x1)
+        return abs(cross) / length
+
+    def _direction_from_lane(self, px: float, py: float) -> CrossingDirection | None:
+        """Arah dari sisi lajur jika kendaraan jelas di kiri/kanan garis cyan."""
+        region = self._lane_region(px, py)
+        if region is None:
+            return None
+        if self._lane_distance(px, py) < 48:
+            return None
+        if region == self.inbound_side:
+            return CrossingDirection.IN
+        return CrossingDirection.OUT
+
+    def _direction_from_motion(
+        self,
+        prev_pt: tuple[float, float],
+        curr_pt: tuple[float, float],
+    ) -> CrossingDirection | None:
+        """Arah dari perpindahan pusat bbox, selaras dengan entry_direction."""
+        prev_side = self._point_side(*prev_pt)
+        curr_side = self._point_side(*curr_pt)
+        from_sides = self._direction_from_sides(prev_side, curr_side)
+        if from_sides is not None:
+            return from_sides
+        dx = curr_pt[0] - prev_pt[0]
+        dy = curr_pt[1] - prev_pt[1]
+        if abs(dx) + abs(dy) < 4.0:
+            return None
+        x1, y1, x2, y2 = self.line
+        # Komponen gerak tegak lurus garis (tanda sama dengan _point_side).
+        nx, ny = -(y2 - y1), (x2 - x1)
+        progress = dx * nx + dy * ny
+        if abs(progress) < 1e-6:
+            return None
+        going_above = progress > 0
+        if self.entry_direction == "up":
+            return CrossingDirection.IN if going_above else CrossingDirection.OUT
+        return CrossingDirection.IN if not going_above else CrossingDirection.OUT
+
+    def _resolve_direction(
+        self,
+        prev_pt: tuple[float, float] | None,
+        curr_pt: tuple[float, float],
+        prev_side: str | None,
+        curr_side: str,
+    ) -> CrossingDirection | None:
+        """
+        Menentukan arah penyeberangan (IN/OUT) dengan hierarki kepastian:
+        1. Posisi lajur (lane divider) jika kendaraan berada jelas di sisi jalur.
+        2. Vektor gerak centroid (motion trajectory) terhadap garis penyeberang.
+        3. Transisi sisi (above -> below atau sebaliknya) sebagai fallback.
+        """
+        lane_dir = self._direction_from_lane(*curr_pt)
+        if lane_dir is not None:
+            return lane_dir
+
+        if prev_pt is not None:
+            motion_dir = self._direction_from_motion(prev_pt, curr_pt)
+            if motion_dir is not None:
+                return motion_dir
+
+        if prev_side is not None:
+            return self._direction_from_sides(prev_side, curr_side)
+
+        return None
+
     def _direction_allowed(self, direction: CrossingDirection, cx: float, cy: float) -> bool:
+        if not self.strict_lane_filter:
+            return True
         region = self._lane_region(cx, cy)
         if region is None:
             return True
@@ -234,6 +313,9 @@ class LineCounter:
         for track in tracks:
             if track.crossed:
                 continue
+            # Kotak prediksi Kalman tidak dipakai untuk arah (sering terbalik / partikel).
+            if getattr(track, "frames_since_seen", 0) > 0:
+                continue
 
             cx, cy = self._counting_point(track)
             curr_side = self._point_side(cx, cy)
@@ -248,18 +330,10 @@ class LineCounter:
                 if prev_side is None:
                     prev_side = "below" if curr_side == "above" else "above"
 
-            if crossed_now and prev_side is not None and track.track_id not in self._pending:
-                direction = self._direction_from_sides(prev_side, curr_side)
+            if crossed_now and track.track_id not in self._pending:
+                direction = self._resolve_direction(prev_pt, (cx, cy), prev_side, curr_side)
                 if direction is not None and self._direction_allowed(direction, cx, cy):
                     self._pending[track.track_id] = self._make_pending(track, direction)
-                elif direction is not None:
-                    logger.debug(
-                        "Gate %s: skip lane filter %s %s (#%s)",
-                        self.gate_id,
-                        direction.value,
-                        track.stable_class,
-                        track.track_id,
-                    )
 
             self._prev_side[track.track_id] = curr_side
             self._prev_point[track.track_id] = (cx, cy)
@@ -270,6 +344,10 @@ class LineCounter:
 
             pending.class_name = track.stable_class
             pending.confidence = max(pending.confidence, track.peak_confidence, track.confidence)
+            if prev_pt is not None:
+                refined = self._resolve_direction(prev_pt, (cx, cy), prev_side, curr_side)
+                if refined is not None:
+                    pending.direction = refined
 
             if self._is_eligible(track):
                 track.crossed = True

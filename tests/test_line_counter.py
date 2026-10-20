@@ -67,3 +67,71 @@ def test_peak_confidence_allows_count_after_dip():
     events = counter.update([t2])
     assert len(events) == 1
     assert events[0].direction == CrossingDirection.IN
+
+
+def test_low_confidence_crossing_is_saved():
+    counter = LineCounter(line=[0, 100, 200, 100], entry_direction="up")
+    counter.update([_track(9, 70, age=1, conf=0.08)])
+    events = counter.update([_track(9, 140, age=1, conf=0.08)])
+    assert len(events) == 1
+    assert events[0].direction == CrossingDirection.IN
+
+
+def test_jump_across_line_still_counts():
+    counter = LineCounter(line=[0, 100, 200, 100], entry_direction="up")
+    counter.update([_track(4, 40, age=1, conf=0.4)])
+    events = counter.update([_track(4, 190, age=2, conf=0.4)])
+    assert len(events) == 1
+    assert events[0].track_id == 4
+
+
+def test_entry_down_toward_camera_is_out():
+    counter = LineCounter(line=[0, 100, 200, 100], entry_direction="down")
+    counter.update([_track(2, 50, age=1, conf=0.6)])
+    events = counter.update([_track(2, 160, age=2, conf=0.6)])
+    assert len(events) == 1
+    assert events[0].direction == CrossingDirection.OUT
+
+
+def test_entry_down_receding_is_in():
+    counter = LineCounter(line=[0, 100, 200, 100], entry_direction="down")
+    counter.update([_track(2, 160, age=1, conf=0.6)])
+    events = counter.update([_track(2, 50, age=2, conf=0.6)])
+    assert len(events) == 1
+    assert events[0].direction == CrossingDirection.IN
+
+
+def test_lane_overrides_motion_when_clearly_outbound():
+    counter = LineCounter(
+        line=[0, 100, 400, 100],
+        entry_direction="up",
+        lane_divider=[200, 0, 200, 200],
+        inbound_side="left",
+    )
+
+    def box(tid: int, y: int) -> Track:
+        x = 300
+        return Track(
+            track_id=tid,
+            class_name="mobil",
+            centroid=(float(x), float(y)),
+            bbox=[x - 20, y - 20, x + 20, y],
+            confidence=0.7,
+            peak_confidence=0.7,
+            age=2,
+            class_votes={"mobil": 2},
+        )
+
+    counter.update([box(8, 70)])
+    events = counter.update([box(8, 150)])
+    assert len(events) == 1
+    assert events[0].direction == CrossingDirection.OUT
+
+
+def test_predicted_bbox_does_not_count():
+    counter = LineCounter(line=[0, 100, 200, 100], entry_direction="up")
+    counter.update([_track(5, 70, age=1, conf=0.5)])
+    ghost = _track(5, 150, age=2, conf=0.5)
+    ghost.frames_since_seen = 1
+    events = counter.update([ghost])
+    assert events == []

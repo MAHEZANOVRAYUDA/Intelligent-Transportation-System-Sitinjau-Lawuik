@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
 import cv2
 import numpy as np
 
-from src.config import get_stream_config
+from src.config import get_settings, get_stream_config
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class StreamStats:
     reconnect_count: int = 0
     last_error: str | None = None
     state: StreamState = StreamState.OFFLINE
+    is_live: bool = False
 
 
 class RTSPStreamManager:
@@ -99,10 +100,30 @@ class RTSPStreamManager:
         self._thread.start()
         logger.info("Gate %s: stream manager started", self.gate_id)
 
+    @property
+    def is_live(self) -> bool:
+        """Cek apakah stream sedang aktif membaca frame dalam beberapa detik terakhir."""
+        now = time.time()
+        return (
+            self._running
+            and self._state == StreamState.LIVE
+            and self._stats.frames_read > 0
+            and (now - self._latest_timestamp <= 4.0)
+        )
+
+    @property
+    def fps(self) -> float:
+        """FPS aktual saat ini, otomatis 0 jika stream tidak sedang aktif."""
+        if not self.is_live:
+            return 0.0
+        return round(self._stats.fps_actual, 1)
+
     def stop(self) -> None:
         self._running = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
+        self._stats.fps_actual = 0.0
+        self._stats.is_live = False
         self._set_state(StreamState.OFFLINE)
 
     def get_latest_frame(self) -> FramePacket:
@@ -168,13 +189,14 @@ class RTSPStreamManager:
                 continue
 
             attempts = 0
-            self._set_state(StreamState.LIVE)
-            logger.info("Gate %s: RTSP connected", self.gate_id)
+            first_frame_read = False
 
             while self._running:
                 ret, frame = cap.read()
                 if not ret or frame is None:
                     self._stats.last_error = "Frame read failed"
+                    self._stats.fps_actual = 0.0
+                    self._stats.is_live = False
                     self._stats.reconnect_count += 1
                     logger.warning("Gate %s: frame read failed, reconnecting...", self.gate_id)
                     break
@@ -186,6 +208,12 @@ class RTSPStreamManager:
                     self._frame_number += 1
                     self._stats.frames_read += 1
 
+                if not first_frame_read:
+                    first_frame_read = True
+                    self._stats.is_live = True
+                    self._set_state(StreamState.LIVE)
+                    logger.info("Gate %s: RTSP stream live and receiving frames", self.gate_id)
+
                 self._fps_counter += 1
                 if now - self._fps_timer >= 1.0:
                     self._stats.fps_actual = self._fps_counter / (now - self._fps_timer)
@@ -193,10 +221,14 @@ class RTSPStreamManager:
                     self._fps_timer = now
 
             cap.release()
+            self._stats.fps_actual = 0.0
+            self._stats.is_live = False
             if self._running:
                 self._set_state(StreamState.RECONNECTING)
                 time.sleep(self._cfg.reconnect_delay_sec)
 
+        self._stats.fps_actual = 0.0
+        self._stats.is_live = False
         self._set_state(StreamState.OFFLINE)
 
 
@@ -218,6 +250,37 @@ class StreamRegistry:
     def all(self) -> dict[str, RTSPStreamManager]:
         with self._lock:
             return dict(self._streams)
+
+    def get_status_dict(self) -> dict[str, dict]:
+        """Status terkini semua gerbang (A & B), baik yang terdaftar maupun belum."""
+        _, env = get_settings()
+        configured_urls = {
+            "A": env.gate_a_rtsp_url,
+            "B": env.gate_b_rtsp_url,
+        }
+        res = {}
+        for gid in ["A", "B"]:
+            sm = self.get(gid)
+            url = configured_urls.get(gid, "")
+            if not url or sm is None:
+                res[gid] = {
+                    "state": "unconfigured",
+                    "configured": False,
+                    "is_live": False,
+                    "fps": 0.0,
+                    "frames": 0,
+                }
+            else:
+                is_live = sm.is_live
+                res[gid] = {
+                    "state": sm.state.value if is_live else ("connecting" if sm.state in (StreamState.CONNECTING, StreamState.RECONNECTING) else sm.state.value),
+                    "configured": True,
+                    "is_live": is_live,
+                    "fps": sm.fps,
+                    "frames": sm.stats.frames_read,
+                    "reconnect_count": sm.stats.reconnect_count,
+                }
+        return res
 
     def start_all(self) -> None:
         for manager in self.all().values():

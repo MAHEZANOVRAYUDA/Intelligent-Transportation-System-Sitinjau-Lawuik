@@ -33,20 +33,61 @@ traffic_status:
   padat_max: 75
   # di atas padat_max = macet
 
+# Standar Pedoman Kapasitas Jalan Indonesia (PKJI 2023 - SE Ditjen Bina Marga No. 21/SE/Db/2023)
+# Tipe Ruas: Jalan Luar Kota / Antarkota 2/2 TT Medan Pegunungan Ekstrem (Sitinjau Lauik)
+pkji:
+  base_capacity_c0: 3550.0          # Kapasitas dasar C0 (smp/jam) dua arah
+  road_width_m: 6.5               # Lebar jalur efektif (meter)
+  factor_fc_w: 0.91               # Faktor penyesuaian lebar jalur (FCw)
+  factor_fc_sp: 1.0              # Faktor pemisahan arah (FCsp, 50-50 = 1.00)
+  factor_fc_sf: 0.91             # Faktor hambatan samping & bahu jalan (FCsf)
+  segment_mode: "khusus"
+  citation: "SE Ditjen Bina Marga No. 21/SE/Db/2023"
+  calculation_mode: "composite"   # "composite" (pembobotan sub-kelas PKJI 2023) | "direct"
+  ekr:                            # Ekivalen Kendaraan Ringan (ekr / emp)
+    mobil: 1.0                   # Kendaraan Ringan (KR / LV) - basis referensi
+    motor: 0.4                   # Sepeda Motor (SM / MC)
+    bus: 2.5                     # Bus Sedang / Besar (BS) tanjakan terjal
+    truck: 8.9                   # Truk Barang (TB / HV) tanjakan ekstrem Sitinjau Lauik (>8%)
+  subclasses:
+    uphill:
+      ks: 1.50                    # Kendaraan Sedang (bus kecil, truk 2-as kecil)
+      bb: 2.50                    # Bus Besar (roda 6+)
+      tb: 8.90                    # Truk Besar (tronton/kontainer/3-as)
+    downhill:
+      ks: 1.20
+      bb: 1.60
+      tb: 2.50
+  composition_ratios:
+    p_bus_ks: 0.0                 # Proporsi bus mikro/kecil (default 0.0 untuk baseline konservatif)
+    p_bus_bb: 1.0                 # Proporsi bus besar
+    p_truck_ks: 0.0               # Proporsi truk sedang/engkel (default 0.0 untuk baseline konservatif)
+    p_truck_tb: 1.0               # Proporsi truk besar/tronton
+  los_thresholds:
+    los_a_max: 0.20
+    los_b_max: 0.44
+    los_c_max: 0.74
+    los_d_max: 0.84
+    los_e_max: 1.00
+    lancar_max_ds: 0.44           # Batas LoS B
+    padat_max_ds: 0.84            # Batas LoS D (di atas 0.84 = Macet / LoS E-F)
+
 # Gerbang
 gates:
   A:
-    name: "Gerbang A (Padang)"
+    name: "Gerbang A — Jl. Padang Besi (Kota Padang)"
+    location: "Jl. Padang Besi (Kota Padang)"
     direction: "A_to_B"
     # Garis virtual counting [x1, y1, x2, y2] — kalibrasi setelah kamera terpasang
     # Default untuk resolusi ~2304x1296 (kamera Bardi prototype)
-    counting_line: [37, 794, 2303, 786]
-    entry_direction: up
+    counting_line: [0, 854, 2303, 854]
+    entry_direction: down
     # Garis pemisah lajur (cyan) — kalibrasi dari /dev
-    lane_divider: [1110, 0, 1189, 1286]
-    inbound_side: right
+    lane_divider: [1091, 16, 1153, 1274]
+    inbound_side: left
   B:
-    name: "Gerbang B (Perbatasan Solok)"
+    name: "Gerbang B — Jembatan Timbang (Solok)"
+    location: "Jembatan Timbang (Solok)"
     direction: "B_to_A"
     counting_line: [100, 400, 900, 400]
     entry_direction: "down"
@@ -54,21 +95,28 @@ gates:
 # Model deteksi
 detection:
   model_path: "models/yolov8n.pt"
-  confidence: 0.22
+  confidence: 0.15
   iou: 0.5
   imgsz: 960
   device: "cpu"  # cpu | cuda | coral (saat deploy)
   classes: ["motor", "mobil", "bus", "truck"]
 
 # Tracking & counting (tuning akurasi)
-# min_count_confidence harus ≤ detection.confidence agar bbox yang tampil bisa dihitung.
-# Umur/confidence hanya menunda simpan, bukan membuang crossing yang sudah terjadi.
+# Asosiasi: mahalanobis | linear | quadratic
+# quadratic = D**_ij = D_ij + λ(1 - IoU)^2  (dokumen penelitian, arahan dosen)
+# min_count_confidence harus ≤ detection.confidence agar bbox yang tampil ikut dihitung.
 tracking:
-  max_distance: 200        # pixel — sesuaikan resolusi kamera
-  max_disappeared: 20      # frame hilang sebelum track dihapus
-  min_hits: 3              # frame stabil sebelum track ditampilkan
-  min_track_age: 3         # frame minimum sebelum crossing dikomit (pending jika lebih muda)
-  min_count_confidence: 0.20
+  max_distance: 280
+  max_disappeared: 30
+  min_hits: 2
+  min_track_age: 1
+  min_count_confidence: 0.05
+  association: quadratic
+  lambda_consistency: 5.0
+  mahalanobis_gate: 9.4877
+  iou_match_min: 0.25
+  detect_every_n: 2          # YOLO tiap N frame; frame skip menahan kotak terakhir (mencegah kedip & drift)
+  strict_lane_filter: false  # true = IN/OUT harus sesuai sisi garis cyan
 
 # Stream video
 stream:
@@ -84,10 +132,15 @@ stream:
   max_reconnect_attempts: 0  # 0 = unlimited
 
 # Estimasi waktu tempuh untuk mode single-gate (detik)
-# 16.5 km @ 40 km/jam ≈ 1485 detik (~25 menit)
+# 16.5 km @ 40 km/jam ≈ 1500 detik (~25 menit)
+# Dilengkapi fungsi tundaan adaptif BPR (Bureau of Public Roads) untuk kemacetan ekstrem
 transit:
   avg_speed_kmh: 40
-  estimated_transit_sec: 1485
+  estimated_transit_sec: 1500
+  adaptive_enabled: true
+  bpr_alpha: 2.5
+  bpr_beta: 2.0
+  max_transit_sec: 9000
 
 # Database
 database:

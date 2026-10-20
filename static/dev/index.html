@@ -183,7 +183,7 @@
   <header>
     <div style="display:flex;align-items:center;gap:0.75rem">
       <span class="dev-badge">DEV MODE</span>
-      <h1>Detection Debug — Gerbang A</h1>
+      <h1>Detection Debug — Gerbang A (Jl. Padang Besi, Kota Padang)</h1>
     </div>
     <div class="header-links">
       <span id="ws-status" style="font-size:0.8rem;color:var(--muted)">Connecting...</span>
@@ -199,16 +199,16 @@
         <div class="video-offline" id="video-offline" style="display:none">Menunggu frame deteksi...</div>
       </div>
       <div class="video-meta">
-        <span>Inference: <val id="meta-fps">—</val> FPS</span>
-        <span>Deteksi: <val id="meta-det">0</val></span>
-        <span>Track: <val id="meta-trk">0</val></span>
-        <span>Frame: <val id="meta-res">—</val></span>
+        <span>Kecepatan AI: <val id="meta-fps">—</val> FPS (Frame/Detik)</span>
+        <span>Objek Terdeteksi: <val id="meta-det">0</val></span>
+        <span>Kendaraan Terlacak: <val id="meta-trk">0</val></span>
+        <span>Resolusi Kamera: <val id="meta-res">—</val> piksel</span>
       </div>
     </div>
 
     <div class="sidebar">
       <div class="panel">
-        <h2>Kalibrasi Garis</h2>
+        <h2>KALIBRASI GARIS</h2>
         <p class="hint">Pilih garis yang akan diedit, lalu klik dua titik di video atau geser ujungnya. Merah = counting. Cyan = pemisah lajur. Simpan agar tidak hilang saat restart.</p>
         <div class="btn-row">
           <button id="btn-mode-count" type="button" class="active">Counting (merah)</button>
@@ -217,12 +217,14 @@
         <div class="btn-row">
           <button id="btn-calibrate" type="button">Mode kalibrasi</button>
           <button id="btn-apply" type="button">Terapkan</button>
+        </div>
+        <div class="btn-row">
           <button id="btn-save" type="button" class="primary">Simpan config</button>
         </div>
         <label class="hint" for="entry-dir">Arah IN (counting)</label>
         <select id="entry-dir">
-          <option value="up">Naik (bawah → atas)</option>
           <option value="down">Turun (atas → bawah)</option>
+          <option value="up">Naik (bawah → atas)</option>
         </select>
         <label class="hint" for="inbound-side">Sisi IN (lajur)</label>
         <select id="inbound-side">
@@ -238,23 +240,189 @@
       </div>
 
       <div class="panel">
-        <h2>Klasifikasi Live (frame ini)</h2>
-        <div class="class-grid">
-          <div class="class-card motor"><div class="label">Motor</div><div class="live" id="live-motor">0</div><div class="in-out">IN: <span id="in-motor">0</span> · OUT: <span id="out-motor">0</span></div></div>
-          <div class="class-card mobil"><div class="label">Mobil</div><div class="live" id="live-mobil">0</div><div class="in-out">IN: <span id="in-mobil">0</span> · OUT: <span id="out-mobil">0</span></div></div>
-          <div class="class-card bus"><div class="label">Bus</div><div class="live" id="live-bus">0</div><div class="in-out">IN: <span id="in-bus">0</span> · OUT: <span id="out-bus">0</span></div></div>
-          <div class="class-card truck"><div class="label">Truck</div><div class="live" id="live-truck">0</div><div class="in-out">IN: <span id="in-truck">0</span> · OUT: <span id="out-truck">0</span></div></div>
+        <h2>KONTROL SISTEM</h2>
+        <p class="hint">Tindakan untuk mengelola sistem secara keseluruhan (berlaku untuk semua gerbang).</p>
+        <div class="btn-row">
+          <button id="btn-reset-global" type="button" class="danger">Hapus Data Global (Reset 0)</button>
+          <button id="btn-restart-server" type="button">Restart Server</button>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Track Aktif</h2>
+        <h2>KLASIFIKASI LIVE (FRAME INI)</h2>
+        <div class="class-grid">
+          <div class="class-card motor">
+            <div class="label">Motor</div>
+            <div class="live" id="live-motor">0</div>
+            <div class="in-out">IN: <span id="in-motor">0</span> · OUT: <span id="out-motor">0</span></div>
+          </div>
+          <div class="class-card mobil">
+            <div class="label">Mobil</div>
+            <div class="live" id="live-mobil">0</div>
+            <div class="in-out">IN: <span id="in-mobil">0</span> · OUT: <span id="out-mobil">0</span></div>
+          </div>
+          <div class="class-card bus">
+            <div class="label">Bus</div>
+            <div class="live" id="live-bus">0</div>
+            <div class="in-out">IN: <span id="in-bus">0</span> · OUT: <span id="out-bus">0</span></div>
+          </div>
+          <div class="class-card truck">
+            <div class="label">Truck</div>
+            <div class="live" id="live-truck">0</div>
+            <div class="in-out">IN: <span id="in-truck">0</span> · OUT: <span id="out-truck">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>TRACK AKTIF</h2>
         <div class="track-list" id="track-list"><div class="empty">Belum ada track stabil</div></div>
       </div>
 
       <div class="panel">
-        <h2>Crossing Terbaru</h2>
+        <h2>CROSSING TERBARU</h2>
         <div class="cross-list" id="cross-list"><div class="empty">Belum ada crossing</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>KALIBRASI PARAMETER PKJI 2023</h2>
+        <p class="hint">Pedoman Kapasitas Jalan Indonesia (SE Ditjen Bina Marga No. 21/SE/Db/2023). Sesuaikan parameter untuk kalibrasi kapasitas daya tampung tanjakan Sitinjau Lauik.</p>
+        
+        <!-- Live Capacity Calculation Preview -->
+        <div style="background: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.2); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 0.68rem; color: var(--muted); font-weight: 600;">Kapasitas Ruas Jalan Praktis (C):</div>
+            <div style="font-size: 0.65rem; color: var(--muted);">Rumus PKJI: C = C₀ × FCw × FCsp × FCsf</div>
+            <div style="font-size: 0.62rem; color: #94a3b8; margin-top: 0.1rem;">*smp/jam = Satuan Mobil Penumpang per Jam</div>
+          </div>
+          <div id="pkji-c-preview" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; color: var(--accent);">— smp/jam</div>
+        </div>
+
+        <!-- Dropdown Mode Segmen Jalan PKJI 2023 -->
+        <div style="margin-bottom: 0.55rem;">
+          <label class="hint" for="pkji-segment-mode" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">Mode Segmen Jalan</label>
+          <select id="pkji-segment-mode" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem;">
+            <option value="khusus" selected>Kelandaian Khusus Tanjakan Ekstrem (Sitinjau Lauik &gt;8%)</option>
+            <option value="umum_gunung">Jalan Luar Kota 2/2 TT Medan Pegunungan</option>
+            <option value="umum_bukit">Jalan Luar Kota 2/2 TT Medan Perbukitan</option>
+            <option value="umum_datar">Jalan Luar Kota 2/2 TT Medan Datar</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; margin-bottom: 0.5rem;">
+          <div>
+            <label class="hint" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">C₀ — Kapasitas Dasar (smp/jam)</label>
+            <input type="number" id="pkji-c0" value="3550" step="50" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" title="Kapasitas dasar segmen jalan 2 lajur tak terbagi di medan berbukit/gunung" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">We — Lebar Jalur Efektif (m)</label>
+            <input type="number" id="pkji-we" value="6.5" step="0.1" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" title="Lebar perkerasan jalan efektif yang dilalui kendaraan" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">FCw — Faktor Lebar Jalur</label>
+            <input type="number" id="pkji-fcw" value="0.91" step="0.01" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" title="Faktor penyesuaian kapasitas berdasarkan lebar jalur lalu lintas" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">FCsf — Faktor Hambatan Samping</label>
+            <input type="number" id="pkji-fcsf" value="0.91" step="0.01" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" title="Faktor penyesuaian hambatan samping dan lebar bahu jalan" />
+          </div>
+        </div>
+
+        <div style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.4rem; background: rgba(255,255,255,0.03); padding: 0.25rem 0.4rem; border-radius: 4px;">
+          *FCsp (Faktor Pemisahan Arah 50:50) = 1.00 (Standar PKJI 2023)
+        </div>
+
+        <div style="font-size: 0.68rem; font-weight: 600; color: var(--muted); margin-top: 0.4rem; margin-bottom: 0.25rem;">Bobot Ekivalen Mobil Penumpang (ekr / emp) Tanjakan:</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; margin-bottom: 0.3rem;">
+          <div>
+            <label class="hint" style="font-size: 0.6rem; margin-bottom: 0.1rem; display: block;">Sepeda Motor</label>
+            <input type="number" id="pkji-ekr-motor" value="0.40" step="0.05" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.3rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.6rem; margin-bottom: 0.1rem; display: block;">Mobil Pribadi</label>
+            <input type="number" id="pkji-ekr-mobil" value="1.00" step="0.05" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.3rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.6rem; margin-bottom: 0.1rem; display: block;">Bus Angkutan</label>
+            <input type="number" id="pkji-ekr-bus" value="2.50" step="0.1" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.3rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" />
+          </div>
+          <div>
+            <label class="hint" style="font-size: 0.6rem; margin-bottom: 0.1rem; display: block;">Truk Barang</label>
+            <input type="number" id="pkji-ekr-truck" value="8.90" step="0.1" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.3rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" />
+          </div>
+        </div>
+        <div style="font-size: 0.62rem; color: var(--muted); margin-bottom: 0.5rem;">
+          *ekr adalah nilai kesetaraan ruang dan perlambatan kendaraan terhadap 1 mobil penumpang di tanjakan Sitinjau Lauik (SE 21/SE/Db/2023).
+        </div>
+
+        <!-- Harmonisasi Sub-Kelas PKJI 2023 (Composite Expected EMP) -->
+        <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.65rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <div style="font-size: 0.68rem; font-weight: 700; color: var(--accent);">HARMONISASI PKJI 2023: COMPOSITE EXPECTED EMP</div>
+            <select id="pkji-calc-mode" style="background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.15rem 0.3rem; font-size: 0.62rem;">
+              <option value="composite" selected>Mode Komposit (Sub-Kelas PKJI 2023)</option>
+              <option value="direct">Mode Flat / Manual</option>
+            </select>
+          </div>
+          <div style="font-size: 0.62rem; color: var(--muted); margin-bottom: 0.4rem; line-height: 1.35;">
+            Menjembatani 4 kelas deteksi visual ke standar 6 kelas PKJI 2023 via formula ekspektasi matematis: <br>
+            <code style="color: #cbd5e1; font-size: 0.62rem;">E[emp] = P(KS) × emp_KS + P(Besar) × emp_Besar</code>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.4rem;">
+            <!-- Truk Composition -->
+            <div style="background: rgba(0,0,0,0.2); padding: 0.35rem 0.45rem; border-radius: 4px;">
+              <div style="font-size: 0.62rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.2rem;">Komposisi Truk Barang:</div>
+              <div style="font-size: 0.6rem; color: var(--muted); display: flex; justify-content: space-between;">
+                <span>Truk Sedang (KS): <strong id="val-p-truck-ks">0%</strong></span>
+                <span>Tronton (TB): <strong id="val-p-truck-tb">100%</strong></span>
+              </div>
+              <input type="range" id="slider-truck-split" min="0" max="100" value="0" style="width: 100%; margin: 0.2rem 0;" />
+              <div style="font-size: 0.6rem; color: var(--accent); margin-top: 0.1rem;">
+                Efektif E[emp_truk]: <strong id="preview-truck-ekr">8.90</strong>
+              </div>
+            </div>
+
+            <!-- Bus Composition -->
+            <div style="background: rgba(0,0,0,0.2); padding: 0.35rem 0.45rem; border-radius: 4px;">
+              <div style="font-size: 0.62rem; font-weight: 600; color: #f8fafc; margin-bottom: 0.2rem;">Komposisi Bus Angkutan:</div>
+              <div style="font-size: 0.6rem; color: var(--muted); display: flex; justify-content: space-between;">
+                <span>Bus Mikro (KS): <strong id="val-p-bus-ks">0%</strong></span>
+                <span>Bus Besar (BB): <strong id="val-p-bus-bb">100%</strong></span>
+              </div>
+              <input type="range" id="slider-bus-split" min="0" max="100" value="0" style="width: 100%; margin: 0.2rem 0;" />
+              <div style="font-size: 0.6rem; color: var(--accent); margin-top: 0.1rem;">
+                Efektif E[emp_bus]: <strong id="preview-bus-ekr">2.50</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rincian Bobot Sub-Kelas PKJI 2023 -->
+          <div style="font-size: 0.6rem; color: var(--muted); display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.3rem;">
+            <span>Tanjakan: KS = 1.50 | BB = 2.50 | TB = 8.90</span>
+            <span>Turunan: KS = 1.20 | BB = 1.60 | TB = 2.50</span>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 0.6rem;">
+          <label class="hint" style="font-size: 0.65rem; margin-bottom: 0.15rem; display: block; font-weight: 600;">Waktu Estimasi Tempuh Koridor (menit)</label>
+          <input type="number" id="pkji-transit-min" value="25" step="1" style="width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;" />
+          <div style="font-size: 0.62rem; color: var(--muted); margin-top: 0.15rem;">
+            *Estimasi durasi melintas normal Padang — Solok (16.5 km) untuk mode monitoring 1 gerbang (~25 menit).
+          </div>
+        </div>
+
+        <!-- Warning Banner Otomatis jika parameter di luar range -->
+        <div id="pkji-warning-banner" style="display: none; background: rgba(255, 69, 58, 0.12); border: 1px solid rgba(255, 69, 58, 0.35); border-radius: 6px; padding: 0.45rem 0.65rem; font-size: 0.68rem; color: #ff6b6b; margin-bottom: 0.6rem; line-height: 1.35;"></div>
+
+        <div class="btn-row" style="margin-bottom: 0.35rem;">
+          <button id="btn-apply-pkji" type="button" style="flex: 1;">Terapkan Sementara (Runtime)</button>
+          <button id="btn-save-pkji" type="button" class="primary" style="flex: 1;">Simpan Permanen (settings.yaml)</button>
+        </div>
+        <div class="btn-row">
+          <button id="btn-reset-pkji-default" type="button" style="width: 100%; font-size: 0.7rem; color: var(--muted);">Kembalikan ke Default PKJI 2023</button>
+        </div>
+        <div id="pkji-status" style="font-size: 0.72rem; min-height: 1.1rem; margin-top: 0.3rem;"></div>
       </div>
     </div>
   </div>
@@ -429,17 +597,25 @@
         document.getElementById('out-' + c).textContent = cout[c] || 0;
       });
 
+      const classNameMap = {
+        motor: 'SEPEDA MOTOR',
+        mobil: 'MOBIL PRIBADI',
+        bus: 'BUS ANGKUTAN',
+        truck: 'TRUK BARANG'
+      };
+
       const tracks = data.tracks || [];
       const trackList = document.getElementById('track-list');
       if (tracks.length === 0) {
-        trackList.innerHTML = '<div class="empty">Belum ada track stabil</div>';
+        trackList.innerHTML = '<div class="empty">Belum ada kendaraan terlacak stabil</div>';
       } else {
-        trackList.innerHTML = tracks.map(t =>
-          `<div class="track-item">
-            <span><span class="track-cls ${t.class_name}">#${t.track_id} ${t.class_name.toUpperCase()}</span></span>
-            <span class="track-conf">${(t.confidence*100).toFixed(0)}% · age:${t.age}</span>
-          </div>`
-        ).join('');
+        trackList.innerHTML = tracks.map(t => {
+          const clsLabel = classNameMap[t.class_name] || t.class_name.toUpperCase();
+          return `<div class="track-item">
+            <span><span class="track-cls ${t.class_name}">#${t.track_id} ${clsLabel}</span></span>
+            <span class="track-conf">Akurasi: ${(t.confidence*100).toFixed(0)}% · Terlacak: ${t.age} frame</span>
+          </div>`;
+        }).join('');
       }
 
       const crosses = data.recent_crossings || [];
@@ -447,12 +623,15 @@
       if (crosses.length === 0) {
         crossList.innerHTML = '<div class="empty">Belum ada crossing</div>';
       } else {
-        crossList.innerHTML = [...crosses].reverse().map(c =>
-          `<div class="cross-item">
-            <span class="dir-${c.direction}">${c.direction.toUpperCase()}</span>
-            · ${c.class_name.toUpperCase()} #${c.track_id} (${(c.confidence*100).toFixed(0)}%)
-          </div>`
-        ).join('');
+        crossList.innerHTML = [...crosses].reverse().map(c => {
+          const isNaik = c.direction === 'in';
+          const dirText = isNaik ? 'NAIK (KE SOLOK)' : 'TURUN (KE PADANG)';
+          const clsLabel = classNameMap[c.class_name] || c.class_name.toUpperCase();
+          return `<div class="cross-item">
+            <span class="${isNaik ? 'dir-in' : 'dir-out'}">${dirText}</span>
+            · ${clsLabel} #${c.track_id} (Akurasi: ${(c.confidence*100).toFixed(0)}%)
+          </div>`;
+        }).join('');
       }
     }
 
@@ -580,10 +759,265 @@
     document.getElementById('btn-reset').addEventListener('click', async () => {
       try {
         await sendCalibrate({ persist: false, reset: true });
-        setStatus('Counter direset');
+        setStatus('Hitungan sesi kamera direset ke 0');
       } catch (err) {
         setStatus(err.message, false);
       }
+    });
+
+    document.getElementById('btn-reset-global').addEventListener('click', async () => {
+      if (!confirm("Reset semua data kendaraan hari ini ke nol? Data database dan dashboard akan kembali ke 0 (server tetap berjalan).")) return;
+      try {
+        const res = await fetch('/api/monitoring/reset', { method: 'POST' });
+        if (!res.ok) throw new Error("Gagal mereset data global");
+        setStatus('Semua data berhasil direset ke 0. Dashboard telah diperbarui.');
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    document.getElementById('btn-restart-server').addEventListener('click', async () => {
+      if (!confirm("Kirim sinyal restart ke proses server?")) return;
+      try {
+        const res = await fetch('/api/dev/restart', { method: 'POST' });
+        if (!res.ok) throw new Error("Gagal mengirim sinyal restart");
+        setStatus('Sinyal restart dikirim. Menyambungkan kembali...');
+        setTimeout(() => window.location.reload(), 3000);
+      } catch (err) {
+        setStatus(err.message, false);
+      }
+    });
+
+    // PKJI 2023 Parameters Management (SE No. 21/SE/Db/2023)
+    function validatePKJIRange() {
+      const c0 = parseFloat(document.getElementById('pkji-c0').value) || 0;
+      const we = parseFloat(document.getElementById('pkji-we').value) || 0;
+      const fcw = parseFloat(document.getElementById('pkji-fcw').value) || 0;
+      const fcsf = parseFloat(document.getElementById('pkji-fcsf').value) || 0;
+      const ekrBus = parseFloat(document.getElementById('pkji-ekr-bus').value) || 0;
+      const ekrTruck = parseFloat(document.getElementById('pkji-ekr-truck').value) || 0;
+
+      const warnings = [];
+      if (c0 < 1000 || c0 > 5000) warnings.push('C₀ di luar rentang wajar jalan 2/2 TT PKJI (1.000–5.000 smp/jam).');
+      if (we < 4.0 || we > 10.0) warnings.push('Lebar jalur efektif We di luar batas jalan luar kota (4,0–10,0 m).');
+      if (fcw < 0.60 || fcw > 1.20) warnings.push('Faktor FCw di luar tabel PKJI 2023 (0,60–1,20).');
+      if (fcsf < 0.60 || fcsf > 1.05) warnings.push('Faktor FCsf di luar batas standar (0,60–1,05).');
+      if (ekrTruck < 1.0 || ekrTruck > 12.0) warnings.push('ekr Truk Barang berada di luar batasan analisis (1,0–12,0).');
+      if (ekrBus < 1.0 || ekrBus > 6.0) warnings.push('ekr Bus Angkutan berada di luar batasan analisis (1,0–6,0).');
+
+      const banner = document.getElementById('pkji-warning-banner');
+      if (!banner) return;
+      if (warnings.length > 0) {
+        banner.innerHTML = '⚠️ <strong>Peringatan Dev:</strong><br>' + warnings.join('<br>');
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+      }
+    }
+
+    function updateCalculatedC() {
+      const c0 = parseFloat(document.getElementById('pkji-c0').value) || 3550;
+      const fcw = parseFloat(document.getElementById('pkji-fcw').value) || 0.91;
+      const fcsf = parseFloat(document.getElementById('pkji-fcsf').value) || 0.91;
+      const c = Math.round(c0 * fcw * 1.0 * fcsf * 100) / 100;
+      const previewEl = document.getElementById('pkji-c-preview');
+      if (previewEl) previewEl.textContent = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(c) + ' smp/jam';
+      validatePKJIRange();
+    }
+
+    ['pkji-c0', 'pkji-we', 'pkji-fcw', 'pkji-fcsf', 'pkji-ekr-motor', 'pkji-ekr-mobil', 'pkji-ekr-bus', 'pkji-ekr-truck', 'pkji-transit-min'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', updateCalculatedC);
+    });
+
+    // Preset ganti Mode Segmen
+    const segmentModeSelect = document.getElementById('pkji-segment-mode');
+    if (segmentModeSelect) {
+      segmentModeSelect.addEventListener('change', (e) => {
+        const mode = e.target.value;
+        if (mode === 'khusus') {
+          document.getElementById('pkji-c0').value = 3550;
+          document.getElementById('pkji-we').value = 6.5;
+          document.getElementById('pkji-fcw').value = 0.91;
+          document.getElementById('pkji-fcsf').value = 0.91;
+          document.getElementById('pkji-ekr-bus').value = 2.50;
+          document.getElementById('pkji-ekr-truck').value = 8.90;
+        } else if (mode === 'umum_gunung') {
+          document.getElementById('pkji-c0').value = 2900;
+          document.getElementById('pkji-we').value = 6.0;
+          document.getElementById('pkji-fcw').value = 0.87;
+          document.getElementById('pkji-fcsf').value = 0.90;
+          document.getElementById('pkji-ekr-bus').value = 1.60;
+          document.getElementById('pkji-ekr-truck').value = 3.50;
+        } else if (mode === 'umum_bukit') {
+          document.getElementById('pkji-c0').value = 3100;
+          document.getElementById('pkji-we').value = 6.5;
+          document.getElementById('pkji-fcw').value = 0.92;
+          document.getElementById('pkji-fcsf').value = 0.93;
+          document.getElementById('pkji-ekr-bus').value = 1.50;
+          document.getElementById('pkji-ekr-truck').value = 2.50;
+        } else if (mode === 'umum_datar') {
+          document.getElementById('pkji-c0').value = 3300;
+          document.getElementById('pkji-we').value = 7.0;
+          document.getElementById('pkji-fcw').value = 1.00;
+          document.getElementById('pkji-fcsf').value = 0.95;
+          document.getElementById('pkji-ekr-bus').value = 1.30;
+          document.getElementById('pkji-ekr-truck').value = 1.80;
+        }
+        updateCalculatedC();
+      });
+    }
+
+    // --- Composite Expected EMP Handlers ---
+    const sliderTruck = document.getElementById('slider-truck-split');
+    const sliderBus = document.getElementById('slider-bus-split');
+    const calcModeSelect = document.getElementById('pkji-calc-mode');
+
+    function updateCompositePreviews() {
+      if (!sliderTruck || !sliderBus) return;
+      const pTruckKs = (parseFloat(sliderTruck.value) || 0) / 100;
+      const pTruckTb = 1.0 - pTruckKs;
+      const valPTruckKs = document.getElementById('val-p-truck-ks');
+      const valPTruckTb = document.getElementById('val-p-truck-tb');
+      if (valPTruckKs) valPTruckKs.textContent = Math.round(pTruckKs * 100) + '%';
+      if (valPTruckTb) valPTruckTb.textContent = Math.round(pTruckTb * 100) + '%';
+
+      const pBusKs = (parseFloat(sliderBus.value) || 0) / 100;
+      const pBusBb = 1.0 - pBusKs;
+      const valPBusKs = document.getElementById('val-p-bus-ks');
+      const valPBusBb = document.getElementById('val-p-bus-bb');
+      if (valPBusKs) valPBusKs.textContent = Math.round(pBusKs * 100) + '%';
+      if (valPBusBb) valPBusBb.textContent = Math.round(pBusBb * 100) + '%';
+
+      // Uphill sub-class values: KS=1.50, BB=2.50, TB=8.90
+      const eTruck = Math.round((pTruckKs * 1.50 + pTruckTb * 8.90) * 100) / 100;
+      const eBus = Math.round((pBusKs * 1.50 + pBusBb * 2.50) * 100) / 100;
+
+      const prevTruck = document.getElementById('preview-truck-ekr');
+      const prevBus = document.getElementById('preview-bus-ekr');
+      if (prevTruck) prevTruck.textContent = eTruck.toFixed(2);
+      if (prevBus) prevBus.textContent = eBus.toFixed(2);
+
+      if (calcModeSelect && calcModeSelect.value === 'composite') {
+        const ekrTruckInput = document.getElementById('pkji-ekr-truck');
+        const ekrBusInput = document.getElementById('pkji-ekr-bus');
+        if (ekrTruckInput) ekrTruckInput.value = eTruck.toFixed(2);
+        if (ekrBusInput) ekrBusInput.value = eBus.toFixed(2);
+      }
+    }
+
+    if (sliderTruck) sliderTruck.addEventListener('input', updateCompositePreviews);
+    if (sliderBus) sliderBus.addEventListener('input', updateCompositePreviews);
+    if (calcModeSelect) calcModeSelect.addEventListener('change', updateCompositePreviews);
+
+    async function loadPKJIParams() {
+      try {
+        const res = await fetch('/api/dev/pkji-params');
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('pkji-c0').value = data.base_capacity_c0 || 3550;
+        document.getElementById('pkji-we').value = data.road_width_m || 6.5;
+        document.getElementById('pkji-fcw').value = data.factor_fc_w || 0.91;
+        document.getElementById('pkji-fcsf').value = data.factor_fc_sf || 0.91;
+        if (data.segment_mode && document.getElementById('pkji-segment-mode')) {
+          document.getElementById('pkji-segment-mode').value = data.segment_mode;
+        }
+        if (data.calculation_mode && calcModeSelect) {
+          calcModeSelect.value = data.calculation_mode;
+        }
+        if (data.composition_ratios) {
+          if (sliderTruck && data.composition_ratios.p_truck_ks !== undefined) {
+            sliderTruck.value = Math.round(data.composition_ratios.p_truck_ks * 100);
+          }
+          if (sliderBus && data.composition_ratios.p_bus_ks !== undefined) {
+            sliderBus.value = Math.round(data.composition_ratios.p_bus_ks * 100);
+          }
+        }
+        if (data.ekr) {
+          document.getElementById('pkji-ekr-motor').value = data.ekr.motor || 0.40;
+          document.getElementById('pkji-ekr-mobil').value = data.ekr.mobil || 1.00;
+          document.getElementById('pkji-ekr-bus').value = data.ekr.bus || 2.50;
+          document.getElementById('pkji-ekr-truck').value = data.ekr.truck || 8.90;
+        }
+        document.getElementById('pkji-transit-min').value = data.estimated_transit_min || 25;
+        updateCompositePreviews();
+        updateCalculatedC();
+      } catch (err) {
+        console.warn("Gagal memuat parameter PKJI:", err);
+      }
+    }
+    loadPKJIParams();
+
+    async function submitPKJIParams(persist) {
+      const statusEl = document.getElementById('pkji-status');
+      statusEl.textContent = persist ? 'Menyimpan & menerapkan...' : 'Menerapkan sementara (runtime)...';
+      statusEl.style.color = 'var(--muted)';
+
+      const payload = {
+        base_capacity_c0: parseFloat(document.getElementById('pkji-c0').value) || 3550,
+        road_width_m: parseFloat(document.getElementById('pkji-we').value) || 6.5,
+        factor_fc_w: parseFloat(document.getElementById('pkji-fcw').value) || 0.91,
+        factor_fc_sp: 1.0,
+        factor_fc_sf: parseFloat(document.getElementById('pkji-fcsf').value) || 0.91,
+        ekr_motor: parseFloat(document.getElementById('pkji-ekr-motor').value) || 0.40,
+        ekr_mobil: parseFloat(document.getElementById('pkji-ekr-mobil').value) || 1.00,
+        ekr_bus: parseFloat(document.getElementById('pkji-ekr-bus').value) || 2.50,
+        ekr_truck: parseFloat(document.getElementById('pkji-ekr-truck').value) || 8.90,
+        segment_mode: document.getElementById('pkji-segment-mode') ? document.getElementById('pkji-segment-mode').value : 'khusus',
+        citation: 'SE Ditjen Bina Marga No. 21/SE/Db/2023',
+        calculation_mode: calcModeSelect ? calcModeSelect.value : 'composite',
+        p_truck_ks: sliderTruck ? (parseFloat(sliderTruck.value) / 100) : 0.0,
+        p_truck_tb: sliderTruck ? (1.0 - parseFloat(sliderTruck.value) / 100) : 1.0,
+        p_bus_ks: sliderBus ? (parseFloat(sliderBus.value) / 100) : 0.0,
+        p_bus_bb: sliderBus ? (1.0 - parseFloat(sliderBus.value) / 100) : 1.0,
+        estimated_transit_sec: Math.round((parseFloat(document.getElementById('pkji-transit-min').value) || 25) * 60),
+        persist: Boolean(persist)
+      };
+
+      try {
+        const res = await fetch('/api/dev/pkji-params', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Gagal memperbarui parameter PKJI");
+        }
+        const json = await res.json();
+        updateCalculatedC();
+        statusEl.textContent = persist
+          ? '✓ Parameter PKJI 2023 tersimpan permanen ke settings.yaml & aktif!'
+          : '✓ Parameter PKJI 2023 diterapkan sementara di runtime memory!';
+        statusEl.style.color = '#3dd68c';
+        setTimeout(() => { statusEl.textContent = ''; }, 4500);
+      } catch (err) {
+        statusEl.textContent = '✗ ' + err.message;
+        statusEl.style.color = '#ff453a';
+      }
+    }
+
+    document.getElementById('btn-apply-pkji').addEventListener('click', () => submitPKJIParams(false));
+    document.getElementById('btn-save-pkji').addEventListener('click', () => submitPKJIParams(true));
+
+    document.getElementById('btn-reset-pkji-default').addEventListener('click', () => {
+      document.getElementById('pkji-c0').value = 3550;
+      document.getElementById('pkji-we').value = 6.5;
+      document.getElementById('pkji-fcw').value = 0.91;
+      document.getElementById('pkji-fcsf').value = 0.91;
+      document.getElementById('pkji-ekr-motor').value = 0.40;
+      document.getElementById('pkji-ekr-mobil').value = 1.00;
+      document.getElementById('pkji-ekr-bus').value = 2.50;
+      document.getElementById('pkji-ekr-truck').value = 8.90;
+      document.getElementById('pkji-transit-min').value = 25;
+      if (document.getElementById('pkji-segment-mode')) {
+        document.getElementById('pkji-segment-mode').value = 'khusus';
+      }
+      updateCalculatedC();
+      const statusEl = document.getElementById('pkji-status');
+      statusEl.textContent = '10 parameter dikembalikan ke acuan resmi PKJI 2023 (SE 21/SE/Db/2023). Tekan Simpan/Terapkan untuk aktifkan.';
+      statusEl.style.color = 'var(--accent)';
     });
 
     function connectWS() {

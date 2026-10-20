@@ -80,7 +80,7 @@ Kamera IP (RTSP)
 | Lapisan | Teknologi |
 |---|---|
 | Deteksi | YOLOv8n Ultralytics, pretrained COCO |
-| Tracking | centroid per kelas + voting kelas |
+| Tracking | Kalman SORT + asosiasi \(D^{**}_{ij}\) + voting kelas |
 | Counting | garis virtual + (opsional) pemisah lajur |
 | Backend | FastAPI + Uvicorn |
 | Data | SQLite (`data/sitinjau_laut.db`) |
@@ -130,7 +130,7 @@ Proyek dimulai dari workspace kosong. Pengembangan **software-first**: kamera Ba
 |---|---|
 | Pipeline RTSP | satu reader, auto-reconnect, buffer minim |
 | YOLOv8n | deteksi 4 kelas kendaraan |
-| Tracker | mengurangi double-count, voting kelas |
+| Tracker | Kalman + \(D^{**}_{ij}\), ID bertahan saat miss-frame, voting kelas |
 | Counting line | garis merah, arah IN up/down |
 | Lane divider | garis cyan, sisi IN kiri/kanan |
 | Kalibrasi Dev Mode | klik/geser garis, **Simpan config** ke `settings.yaml` |
@@ -201,12 +201,12 @@ URL RTSP Gerbang A ada di `.env` (`GATE_A_RTSP_URL`). Gerbang B masih kosong.
 
 ### Hardware (prioritas anggaran, perkiraan)
 
-- 2× Raspberry Pi 5 8GB  
-- 2× Google Coral USB  
-- 2× SSD 128GB + enclosure  
-- 2× UPS  
-- 2× kamera IP outdoor (final, bukan prototipe Bardi)  
-- Jaringan/listrik lapangan  
+Daftar lengkap pengadaan, ESP32+LCD+fan, dan analisis kompatibilitas: `docs/hardware_integrasi.md` (canvas ringkasan di sesi Cursor).
+
+- 2× Raspberry Pi 5 8GB + Hailo-8L (Coral USB hanya cadangan)
+- 2× SSD 256GB USB3, 2× UPS, 2× kamera IP outdoor PoE
+- 2× ESP32 + LCD 20×4 monokrom + MOSFET fan 12 V
+- 2× router 4G industri + kabinet IP65  
 
 ---
 
@@ -258,6 +258,9 @@ Setelah kalibrasi di Dev Mode, tekan **Simpan config** agar garis tidak hilang s
 - Panel dashboard “Kendaraan per Jenis” awalnya memakai `live_class_counts` (bbox di kamera), bukan event SQLite. Sudah diubah ke `today_crossings` (tersimpan, per kelas, IN/OUT).
 - Counting bisa melewatkan kendaraan yang bbox-nya sudah tampil: `min_count_confidence` (0.40) lebih ketat dari YOLO (0.35); `min_track_age` membuang crossing jika `continue` sebelum `_prev_side` tercatat. Perbaikan: pending crossing, peak confidence, ambang counting 0.30, umur 3, titik acuan tengah-bawah bbox.
 - Panel per jenis diubah ke `on_road` realtime (IN +1 / OUT −1). Tombol **Hapus data** → `POST /api/monitoring/reset` mengosongkan SQLite dan hitungan runtime.
-- Motor sering tidak tampil karena YOLOv8n COCO menandai pengendara sebagai `person`/`bicycle` lalu filter kelas membuangnya. Perbaikan: bicycle→motor, person di badan jalan→motor (bukan penumpang mobil), `conf=0.22`, `imgsz=960`.
+- Motor sering tidak tampil karena YOLOv8n COCO menandai pengendara sebagai `person`/`bicycle` lalu filter kelas membuangnya. Perbaikan: bicycle→motor, person di badan jalan→motor (bukan penumpang mobil), `conf=0.15`, `imgsz=960`.
+- Asosiasi tracking sesuai dokumen *Pengembangan Rumus Asosiasi Data*: Kalman + \(D^{**}_{ij}=D_{ij}+\lambda(1-T_{ij})^2\). YOLO loss tidak diubah. Prediksi bbox saat miss-frame menstabilkan ID/counting.
+- Counting tidak lagi menahan simpan karena confidence/umur tinggi. Overlay yang benar harus masuk DB: `min_count_confidence=0.05`, `min_track_age=1`, Kalman tiap frame, YOLO tiap 2 frame, filter lajur default non-ketat. Klasifikasi bus/truck kecil dikoreksi ke mobil; overlap kotak dideduplikasi. Fine-tune dataset belakangan.
+- Partikel overlay (bukan di stream mentah): Kalman/YOLO speck yang dilabel motor. Filter ukuran+confidence motor, overlay hanya bbox terukur, arah IN/OUT dari pusat bbox + sisi lajur (bukan tepi bawah / dy yang bertentangan).
 
 Dokumen ini sengaja ditulis agar pekerjaan bisa dilanjutkan di percakapan/sesi baru tanpa kehilangan konteks.

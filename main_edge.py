@@ -517,6 +517,8 @@ class SitinjauEdgeRunner:
 
         # Kirim sisa akumulasi sebelum keluar
         self._dispatch_interval_report()
+        if hasattr(self.detector, "close"):
+            self.detector.close()
         logger.info("Node Edge berhenti dengan aman.")
 
     def _dispatch_interval_report(self) -> None:

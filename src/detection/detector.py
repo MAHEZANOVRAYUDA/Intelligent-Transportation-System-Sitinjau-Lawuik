@@ -256,3 +256,12 @@ class VehicleDetector(BaseDetector):
                     keep[i] = False
                     break
         return [v for v, ok in zip(vehicles, keep) if ok]
+
+    def close(self) -> None:
+        """Melepaskan resource backend detektor (Hailo VDevice / PyTorch)."""
+        if hasattr(self, "_hailo_detector") and self._hailo_detector is not None:
+            self._hailo_detector.close()
+        self._loaded = False
+
+    def __del__(self) -> None:
+        self.close()

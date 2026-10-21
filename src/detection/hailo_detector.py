@@ -259,3 +259,17 @@ class HailoDetector(BaseDetector):
                 })
 
         return deduplicate_boxes(detections)
+
+    def close(self) -> None:
+        """Melepaskan resource Hailo VDevice agar file descriptor fisik PCIe tidak terkunci."""
+        try:
+            if hasattr(self, "_vdevice") and self._vdevice is not None:
+                if hasattr(self._vdevice, "release"):
+                    self._vdevice.release()
+                self._vdevice = None
+        except Exception:
+            pass
+        self._loaded = False
+
+    def __del__(self) -> None:
+        self.close()

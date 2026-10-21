@@ -21,10 +21,13 @@ echo "Gerbang      : ${GATE}"
 echo "----------------------------------------------------------"
 
 if [ ! -f "${VENV_PYTHON}" ]; then
-    echo "[!] Virtual environment tidak ditemukan di ${VENV_PYTHON}."
-    echo "[*] Menggunakan python3 sistem: $(which python3)"
-    VENV_PYTHON="$(which python3)"
+    echo "[!] Virtual environment belum ditemukan di ${VENV_PYTHON}."
+    echo "[+] Membuat virtual environment baru (--system-site-packages) agar Hailo-8L terhubung..."
+    python3 -m venv --system-site-packages "${REPO_DIR}/venv"
 fi
+
+echo "[+] Menginstall dependensi edge ringan (requirements-edge.txt)..."
+"${VENV_PYTHON}" -m pip install -r "${REPO_DIR}/requirements-edge.txt"
 
 # 1. Pastikan izin akses fisik chip Hailo-8L
 if [ -e "/dev/hailo0" ]; then

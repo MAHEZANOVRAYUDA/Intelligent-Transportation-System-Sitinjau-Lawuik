@@ -7,14 +7,20 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    _has_dotenv = True
+except ImportError:
+    _has_dotenv = False
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT_DIR / "config" / "settings.yaml"
 
-load_dotenv(ROOT_DIR / ".env")
+if _has_dotenv:
+    load_dotenv(ROOT_DIR / ".env")
 
 
 class VehicleConfig(BaseModel):

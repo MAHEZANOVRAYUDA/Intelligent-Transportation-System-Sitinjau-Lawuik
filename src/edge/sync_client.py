@@ -33,6 +33,8 @@ class EdgeSyncClient:
         total_in: int = 0,
         total_out: int = 0,
         buffer_count: int = 0,
+        frame_width: int = 2560,
+        frame_height: int = 1440,
     ) -> bool:
         """Kirim sinyal heartbeat ringan ke server pusat."""
         payload = {
@@ -42,6 +44,8 @@ class EdgeSyncClient:
             "total_in": total_in,
             "total_out": total_out,
             "buffer_count": buffer_count,
+            "frame_width": frame_width,
+            "frame_height": frame_height,
         }
         endpoint = f"{self.server_url}/api/edge/heartbeat"
         try:

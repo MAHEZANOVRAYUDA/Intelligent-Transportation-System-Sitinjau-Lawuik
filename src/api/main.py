@@ -383,6 +383,8 @@ class EdgeHeartbeatPayload(BaseModel):
     buffer_count: int = 0
     total_in: int = 0
     total_out: int = 0
+    frame_width: int = 2560
+    frame_height: int = 1440
     timestamp: str | None = None
 
 
@@ -399,6 +401,8 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
             "fps": round(payload.fps, 1),
             "buffer_count": payload.buffer_count,
             "counts": {"in": payload.total_in, "out": payload.total_out},
+            "frame_width": payload.frame_width,
+            "frame_height": payload.frame_height,
             "ip": client_ip,
         })
     return {"status": "ok", "gate_id": gid}

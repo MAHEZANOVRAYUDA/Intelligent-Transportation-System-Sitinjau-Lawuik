@@ -126,11 +126,13 @@ def annotate_frame(
     show_raw: bool = False,
     lane_divider: list[int] | None = None,
     inbound_side: str = "left",
+    draw_lines: bool = False,
 ) -> np.ndarray:
     annotated = frame.copy()
-    draw_counting_line(annotated, line)
-    if lane_divider and len(lane_divider) == 4:
-        draw_lane_divider(annotated, lane_divider, inbound_side)
+    if draw_lines:
+        draw_counting_line(annotated, line)
+        if lane_divider and len(lane_divider) == 4:
+            draw_lane_divider(annotated, lane_divider, inbound_side)
 
     if show_raw:
         draw_raw_detections(annotated, detections)

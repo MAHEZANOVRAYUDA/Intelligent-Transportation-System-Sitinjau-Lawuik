@@ -30,6 +30,10 @@ def test_dev_state_gate_b(client):
     data = res.json()
     assert "counting_line" in data
     assert len(data["counting_line"]) == 4
+    assert data["frame_width"] == 2560
+    assert data["frame_height"] == 1440
+    assert "lane_divider" in data
+    assert len(data["lane_divider"]) == 4
     assert "entry_direction" in data
 
 

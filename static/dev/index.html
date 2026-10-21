@@ -59,18 +59,29 @@
       aspect-ratio: 16/9;
       position: relative;
     }
-    .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .video-wrap img {
+      width: 100%; height: 100%;
+      object-fit: contain; display: block;
+      transition: opacity 0.2s ease;
+    }
     #line-canvas {
       position: absolute; inset: 0;
       width: 100%; height: 100%;
       pointer-events: none;
+      z-index: 5;
     }
     .video-wrap.calibrate #line-canvas { pointer-events: auto; cursor: crosshair; }
     .video-offline {
       position: absolute; inset: 0;
       display: flex; align-items: center; justify-content: center;
-      color: var(--muted); font-size: 0.9rem;
+      background: rgba(13, 17, 23, 0.95);
+      backdrop-filter: blur(4px);
+      color: #94a3b8; font-size: 0.9rem;
+      font-family: 'JetBrains Mono', monospace;
       pointer-events: none;
+      z-index: 8;
+      text-align: center;
+      padding: 1.5rem;
     }
     .video-meta {
       padding: 0.75rem 1rem;
@@ -604,6 +615,11 @@
       calibrateMode = false;
       clickStep = 0;
       dragHandle = null;
+      draftLine = null;
+      draftLane = null;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      updateLineLabel();
+
       wrap.classList.remove('calibrate');
       const calBtn = document.getElementById('btn-calibrate');
       if (calBtn) {
@@ -612,7 +628,8 @@
       }
       setStatus('');
 
-      // Ganti Video Stream MJPEG ke Gerbang Terpilih
+      // Sembunyikan frame lama seketika agar tidak membeku dan tertimpa garis gerbang baru
+      img.style.opacity = '0';
       const offlineMsg = document.getElementById('video-offline');
       if (offlineMsg) {
         offlineMsg.style.display = 'flex';
@@ -764,6 +781,12 @@
     }
 
     function updateUI(data) {
+      if (!data) return;
+      // Hindari response dari gerbang lain yang tiba terlambat
+      if (data.gate_id && data.gate_id.toUpperCase() !== currentGate) {
+        return;
+      }
+
       document.getElementById('meta-fps').textContent = (data.inference_fps || 0).toFixed(1);
       document.getElementById('meta-det').textContent = data.detection_count || 0;
       document.getElementById('meta-trk').textContent = data.track_count || 0;
@@ -772,13 +795,17 @@
         document.getElementById('meta-res').textContent = data.frame_width + '×' + data.frame_height;
       }
 
-      if (!calibrateMode && Array.isArray(data.counting_line) && data.counting_line.length === 4) {
-        draftLine = data.counting_line.map(Number);
-      }
-      if (!calibrateMode && Array.isArray(data.lane_divider) && data.lane_divider.length === 4) {
-        draftLane = data.lane_divider.map(Number);
-      }
       if (!calibrateMode) {
+        if (Array.isArray(data.counting_line) && data.counting_line.length === 4) {
+          draftLine = data.counting_line.map(Number);
+        } else {
+          draftLine = null;
+        }
+        if (Array.isArray(data.lane_divider) && data.lane_divider.length === 4) {
+          draftLane = data.lane_divider.map(Number);
+        } else {
+          draftLane = null;
+        }
         updateLineLabel();
         drawOverlay();
       }
@@ -1305,11 +1332,19 @@
     }
 
     img.addEventListener('error', () => {
-      document.getElementById('video-offline').style.display = 'flex';
+      img.style.opacity = '0';
+      const meta = GATE_METADATA[currentGate] || { name: currentGate };
+      const offlineMsg = document.getElementById('video-offline');
+      if (offlineMsg) {
+        offlineMsg.style.display = 'flex';
+        offlineMsg.textContent = 'CCTV ' + meta.name + ' sedang OFFLINE atau belum terhubung.';
+      }
     });
     img.addEventListener('load', () => {
+      img.style.opacity = '1';
       document.getElementById('video-offline').style.display = 'none';
       resizeCanvas();
+      drawOverlay();
     });
     window.addEventListener('resize', resizeCanvas);
     new ResizeObserver(resizeCanvas).observe(wrap);

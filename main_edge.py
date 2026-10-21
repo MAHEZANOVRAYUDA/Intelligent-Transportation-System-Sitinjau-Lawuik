@@ -452,6 +452,7 @@ class SitinjauEdgeRunner:
                 if (now - self.last_heartbeat_time) >= 15.0:
                     self.last_heartbeat_time = now
                     active_backend = getattr(self.detector, "active_backend", self.backend)
+                    fh, fw = frame.shape[:2]
                     threading.Thread(
                         target=self.sync_client.send_heartbeat,
                         kwargs={
@@ -460,6 +461,8 @@ class SitinjauEdgeRunner:
                             "total_in": self.counter.state.total_in,
                             "total_out": self.counter.state.total_out,
                             "buffer_count": self.buffer.count(),
+                            "frame_width": fw,
+                            "frame_height": fh,
                         },
                         daemon=True,
                     ).start()
@@ -477,19 +480,17 @@ class SitinjauEdgeRunner:
                         counts_out=self.counter.state.total_out,
                         lane_divider=self.gate_cfg.lane_divider,
                         inbound_side=self.gate_cfg.inbound_side,
-                    )
-                    cv2.putText(
-                        annotated,
-                        f"RPi5 + Hailo-8L | FPS: {self.fps_meter:.1f} | Buffer: {self.buffer.count()}",
-                        (20, 35),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (0, 255, 0),
-                        2,
+                        draw_lines=False,
                     )
                     if self.stream_holder:
+                        stream_frame = annotated
+                        sh, sw = stream_frame.shape[:2]
+                        max_w = 1280
+                        if sw > max_w:
+                            scale = max_w / sw
+                            stream_frame = cv2.resize(stream_frame, (max_w, int(sh * scale)), interpolation=cv2.INTER_AREA)
                         ret_enc, jpeg_bytes = cv2.imencode(
-                            ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                            ".jpg", stream_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
                         )
                         if ret_enc:
                             self.stream_holder.update(

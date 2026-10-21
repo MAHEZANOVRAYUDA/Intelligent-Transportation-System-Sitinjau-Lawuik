@@ -89,8 +89,11 @@ gates:
     name: "Gerbang B — Jembatan Timbang (Solok)"
     location: "Jembatan Timbang (Solok)"
     direction: "B_to_A"
-    counting_line: [100, 400, 900, 400]
-    entry_direction: "down"
+    # Default untuk resolusi kamera Bardi (2560x1440 / 2304x1296) full-span
+    counting_line: [0, 854, 2559, 854]
+    entry_direction: down
+    lane_divider: [1150, 0, 1150, 1439]
+    inbound_side: left
 
 # Model deteksi
 detection:

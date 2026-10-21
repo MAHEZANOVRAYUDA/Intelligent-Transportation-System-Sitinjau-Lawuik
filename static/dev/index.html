@@ -74,14 +74,83 @@
     .video-offline {
       position: absolute; inset: 0;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(13, 17, 23, 0.95);
-      backdrop-filter: blur(4px);
-      color: #94a3b8; font-size: 0.9rem;
-      font-family: 'JetBrains Mono', monospace;
-      pointer-events: none;
+      background: radial-gradient(circle at center, rgba(17, 24, 39, 0.94) 0%, rgba(10, 14, 20, 0.98) 100%);
+      backdrop-filter: blur(8px);
       z-index: 8;
-      text-align: center;
       padding: 1.5rem;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .offline-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: 420px;
+      padding: 1.6rem 2rem;
+      background: rgba(22, 27, 34, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    }
+    .offline-beacon {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.9rem;
+    }
+    .beacon-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid rgba(245, 158, 11, 0.35);
+      animation: beacon-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+    }
+    .beacon-core {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #f59e0b;
+      box-shadow: 0 0 12px #f59e0b;
+    }
+    @keyframes beacon-pulse {
+      0% { transform: scale(0.6); opacity: 0.95; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    .offline-title {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #f1f5f9;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.4rem;
+    }
+    .offline-desc {
+      font-size: 0.76rem;
+      color: #94a3b8;
+      line-height: 1.5;
+      margin-bottom: 0.85rem;
+    }
+    .offline-tech-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.25rem 0.65rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: #64748b;
+    }
+    .offline-tech-badge .tech-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #f59e0b;
     }
     .video-meta {
       padding: 0.75rem 1rem;
@@ -111,12 +180,49 @@
     button {
       font-family: inherit; font-size: 0.75rem; font-weight: 600;
       border: 1px solid var(--border); background: var(--surface2); color: var(--text);
-      padding: 0.4rem 0.7rem; border-radius: 6px; cursor: pointer;
+      padding: 0.42rem 0.75rem; border-radius: 6px; cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
     }
-    button:hover { border-color: var(--accent); }
-    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.danger { border-color: #ff453a55; color: #ff453a; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:hover {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    button:active {
+      transform: translateY(1px);
+    }
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(88, 166, 255, 0.28);
+    }
+    button.danger {
+      border-color: rgba(255, 69, 58, 0.3);
+      color: #ff6b6b;
+      background: rgba(255, 69, 58, 0.06);
+    }
+    button.danger:hover {
+      border-color: rgba(255, 69, 58, 0.6);
+      background: rgba(255, 69, 58, 0.15);
+      color: #ff8585;
+    }
+    button.primary {
+      background: #f59e0b;
+      border-color: #f59e0b;
+      color: #0f172a;
+      font-weight: 700;
+    }
+    button.primary:hover {
+      background: #fbbf24;
+      border-color: #fbbf24;
+      box-shadow: 0 0 14px rgba(245, 158, 11, 0.35);
+    }
     select {
       width: 100%; background: var(--surface2); color: var(--text);
       border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem;
@@ -168,15 +274,7 @@
     .empty { color: var(--muted); font-size: 0.8rem; font-style: italic; }
     .hint { font-size: 0.75rem; color: var(--muted); line-height: 1.45; margin-bottom: 0.65rem; }
     .btn-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
-    button {
-      font-family: inherit; font-size: 0.75rem; font-weight: 600;
-      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
-      padding: 0.4rem 0.7rem; border-radius: 6px; cursor: pointer;
-    }
-    button:hover { border-color: var(--accent); }
-    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.danger { border-color: #ff453a55; color: #ff453a; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
     select {
       width: 100%; background: var(--surface2); color: var(--text);
       border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem;
@@ -303,19 +401,19 @@
   </header>
 
   <div class="gate-switcher-bar">
-    <div class="gate-switcher" role="tablist">
-      <button type="button" class="gate-tab active" id="tab-gate-a" onclick="switchGate('A')">
+    <div class="gate-switcher" role="tablist" aria-label="Pilih Gerbang Pemantauan">
+      <button type="button" class="gate-tab active" id="tab-gate-a" onclick="switchGate('A')" role="tab" aria-selected="true">
         <span class="tab-dot"></span>
         <span>Gerbang A</span>
         <span class="tab-sub">— Jl. Padang Besi (Padang)</span>
       </button>
-      <button type="button" class="gate-tab" id="tab-gate-b" onclick="switchGate('B')">
+      <button type="button" class="gate-tab" id="tab-gate-b" onclick="switchGate('B')" role="tab" aria-selected="false">
         <span class="tab-dot"></span>
         <span>Gerbang B</span>
         <span class="tab-sub">— Jembatan Timbang (Solok)</span>
       </button>
-    <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
-      <div class="active-gate-badge" id="active-gate-badge">Gerbang Aktif: GERBANG A</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
       <div class="edge-node-badge" id="edge-node-badge" title="Status Edge Computing Raspberry Pi 5 + Hailo-8L di lapangan">
         <span class="edge-dot" id="edge-dot"></span>
         <span id="edge-status-text">Edge RPi 5: Memeriksa...</span>
@@ -328,7 +426,20 @@
       <div class="video-wrap" id="video-wrap">
         <img id="dev-stream" src="/api/dev/stream/A" alt="Detection Stream">
         <canvas id="line-canvas"></canvas>
-        <div class="video-offline" id="video-offline" style="display:none">Menunggu frame deteksi...</div>
+        <div class="video-offline" id="video-offline">
+          <div class="offline-card">
+            <div class="offline-beacon">
+              <div class="beacon-ring"></div>
+              <div class="beacon-core"></div>
+            </div>
+            <div class="offline-title" id="offline-title">Menghubungkan ke CCTV GERBANG A...</div>
+            <div class="offline-desc" id="offline-desc">Menunggu aliran video RTSP atau sinyal deteksi dari unit kamera.</div>
+            <div class="offline-tech-badge">
+              <span class="tech-dot"></span>
+              <span id="offline-tech-text">Protokol: RTSP / MJPEG Edge Gateway</span>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="video-meta">
         <span>Kecepatan AI: <val id="meta-fps">—</val> FPS (Frame/Detik)</span>
@@ -563,6 +674,7 @@
     let currentGate = 'A';
     let currentWS = null;
     let wsReconnectTimer = null;
+    let streamLive = false;
 
     const GATE_METADATA = {
       'A': {
@@ -591,18 +703,21 @@
       if (gateId !== 'A' && gateId !== 'B') gateId = 'A';
       currentGate = gateId;
 
-      // Perbarui UI Tabs & Badges
+      // Perbarui UI Tabs
       const tabA = document.getElementById('tab-gate-a');
       const tabB = document.getElementById('tab-gate-b');
-      if (tabA) tabA.classList.toggle('active', gateId === 'A');
-      if (tabB) tabB.classList.toggle('active', gateId === 'B');
+      if (tabA) {
+        tabA.classList.toggle('active', gateId === 'A');
+        tabA.setAttribute('aria-selected', gateId === 'A' ? 'true' : 'false');
+      }
+      if (tabB) {
+        tabB.classList.toggle('active', gateId === 'B');
+        tabB.setAttribute('aria-selected', gateId === 'B' ? 'true' : 'false');
+      }
 
       const meta = GATE_METADATA[gateId];
       const pageTitle = document.getElementById('dev-page-title');
       if (pageTitle) pageTitle.textContent = meta.title;
-
-      const badge = document.getElementById('active-gate-badge');
-      if (badge) badge.textContent = 'Gerbang Aktif: ' + meta.name;
 
       // Sinkronkan parameter URL tanpa reload halaman (?gate=a atau ?gate=b)
       try {
@@ -612,6 +727,7 @@
       } catch (e) {}
 
       // Reset garis kalibrasi draft dan status mode
+      streamLive = false;
       calibrateMode = false;
       clickStep = 0;
       dragHandle = null;
@@ -628,13 +744,17 @@
       }
       setStatus('');
 
-      // Sembunyikan frame lama seketika agar tidak membeku dan tertimpa garis gerbang baru
+      // Sembunyikan frame lama seketika dan tampilkan status menghubungkan yang bersih
       img.style.opacity = '0';
       const offlineMsg = document.getElementById('video-offline');
       if (offlineMsg) {
         offlineMsg.style.display = 'flex';
-        offlineMsg.textContent = 'Menghubungkan ke CCTV ' + meta.name + '...';
+        const titleEl = document.getElementById('offline-title');
+        const descEl = document.getElementById('offline-desc');
+        if (titleEl) titleEl.textContent = 'Menghubungkan ke CCTV ' + meta.name + '...';
+        if (descEl) descEl.textContent = 'Menunggu aliran video RTSP atau sinyal deteksi dari unit kamera.';
       }
+      drawOverlay();
       img.src = '/api/dev/stream/' + gateId + '?t=' + Date.now();
 
       // Sambungkan ulang WebSocket khusus gerbang terpilih
@@ -739,6 +859,8 @@
 
     function drawOverlay() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Cegah bayangan garis sumbu X/Y ketika kamera sedang offline di luar mode kalibrasi
+      if (!streamLive && !calibrateMode) return;
       drawOneLine(draftLine, '#ff453a', calibrateMode && editTarget === 'count');
       drawOneLine(draftLane, '#3dd6ff', calibrateMode && editTarget === 'lane');
     }
@@ -1313,9 +1435,11 @@
           const fps = node.fps ? (node.fps.toFixed(1) + ' FPS') : '';
           const backend = node.backend ? node.backend.toUpperCase() : 'NPU';
           text.textContent = 'Edge RPi 5: Online (' + backend + ' ' + fps + ')';
+          badge.title = 'Edge unit terhubung via Hailo-8L NPU';
         } else {
           badge.classList.remove('online');
-          text.textContent = 'Edge RPi 5: Offline (Deteksi Laptop)';
+          text.textContent = 'Edge RPi 5: Offline';
+          badge.title = 'Edge computing RPi 5 offline. Deteksi otomatis berjalan via engine lokal (fallback).';
         }
       } catch (e) {}
     }
@@ -1332,19 +1456,28 @@
     }
 
     img.addEventListener('error', () => {
+      streamLive = false;
       img.style.opacity = '0';
-      const meta = GATE_METADATA[currentGate] || { name: currentGate };
+      const meta = GATE_METADATA[currentGate] || { name: 'GERBANG ' + currentGate };
       const offlineMsg = document.getElementById('video-offline');
       if (offlineMsg) {
         offlineMsg.style.display = 'flex';
-        offlineMsg.textContent = 'CCTV ' + meta.name + ' sedang OFFLINE atau belum terhubung.';
+        const titleEl = document.getElementById('offline-title');
+        const descEl = document.getElementById('offline-desc');
+        if (titleEl) titleEl.textContent = 'Menghubungkan ke CCTV ' + meta.name + '...';
+        if (descEl) descEl.textContent = 'Kamera ' + meta.name + ' sedang offline atau stream belum terkirim.';
       }
+      drawOverlay();
     });
     img.addEventListener('load', () => {
-      img.style.opacity = '1';
-      document.getElementById('video-offline').style.display = 'none';
-      resizeCanvas();
-      drawOverlay();
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        streamLive = true;
+        img.style.opacity = '1';
+        const off = document.getElementById('video-offline');
+        if (off) off.style.display = 'none';
+        resizeCanvas();
+        drawOverlay();
+      }
     });
     window.addEventListener('resize', resizeCanvas);
     new ResizeObserver(resizeCanvas).observe(wrap);

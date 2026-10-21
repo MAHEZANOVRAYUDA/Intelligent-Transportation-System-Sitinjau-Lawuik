@@ -226,15 +226,6 @@ async def simulate_traffic(payload: SimulateTrafficRequest = SimulateTrafficRequ
     }
 
 
-def _make_offline_frame(text1: str, text2: str) -> bytes:
-    """Membuat frame gambar status offline untuk ditampilkan ke viewer saat edge node mati."""
-    img = np.zeros((360, 640, 3), dtype=np.uint8)
-    cv2.putText(img, text1, (40, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-    cv2.putText(img, text2, (40, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
-    ret, jpeg = cv2.imencode(".jpg", img)
-    return jpeg.tobytes() if ret else b""
-
-
 async def _dev_mjpeg_generator(gate_id: str):
     boundary = b"frame"
     from src.config import get_settings
@@ -265,18 +256,8 @@ async def _dev_mjpeg_generator(gate_id: str):
                 except Exception:
                     pass
 
-            # Jika Raspberry Pi mati / offline, kirim frame hitam status offline
-            offline_jpeg = _make_offline_frame(
-                "EDGE NODE GERBANG B: OFFLINE",
-                "Raspberry Pi 5 dimatikan atau terputus",
-            )
-            yield (
-                b"--" + boundary + b"\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(offline_jpeg)).encode() + b"\r\n\r\n"
-                + offline_jpeg + b"\r\n"
-            )
-            await asyncio.sleep(1.0)
+            # Saat Raspberry Pi offline, tunggu tanpa mengirim frame raster palsu (UI frontend menangani tampilan)
+            await asyncio.sleep(0.5)
 
     else:
         # Mode lokal worker laptop

@@ -1470,6 +1470,15 @@
       drawOverlay();
     });
     img.addEventListener('load', () => {
+      // Abaikan jika frame yang diterima adalah raster dummy offline (misal 640x360 dari proses backend lama)
+      if (img.naturalWidth === 640 && img.naturalHeight === 360) {
+        streamLive = false;
+        img.style.opacity = '0';
+        const off = document.getElementById('video-offline');
+        if (off) off.style.display = 'flex';
+        drawOverlay();
+        return;
+      }
       if (img.naturalWidth > 0 && img.naturalHeight > 0) {
         streamLive = true;
         img.style.opacity = '1';

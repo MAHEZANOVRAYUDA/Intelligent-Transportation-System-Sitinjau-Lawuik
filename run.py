@@ -13,12 +13,14 @@ from src.config import get_settings
 
 def main():
     _, env = get_settings()
-    # Reload dimatikan: WatchFiles pada seluruh folder (termasuk venv) membuat halaman pending.
+    # Batasi reload hanya memantau direktori src/ agar tidak memindai venv atau data
+    reload_enabled = bool(env.api_debug)
     uvicorn.run(
         "src.api.main:app",
         host=env.api_host,
         port=env.api_port,
-        reload=False,
+        reload=reload_enabled,
+        reload_dirs=[str(ROOT / "src")] if reload_enabled else None,
         log_level="info",
     )
 

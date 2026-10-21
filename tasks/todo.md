@@ -24,4 +24,10 @@
 ## Phase 5: Verification & Automated Tests
 - [x] Task 5.1: Buat unit test `tests/test_dev_gates.py` untuk memverifikasi endpoint state dan kalibrasi Gerbang B.
 - [x] Task 5.2: Buat unit test simulasi fallback Hailo status 74 pada `VehicleDetector`.
-- [x] Task 5.3: Jalankan seluruh test suite via `pytest` (memastikan 100% test lulus tanpa regresi - 55 passed).
+- [x] Task 5.3: Jalankan seluruh test suite via `pytest` (memastikan 100% test lulus tanpa regresi - 60 passed).
+
+## Phase 6: Edge Separation & Zero-Local-Duplicate Execution
+- [x] Task 6.1: Tambahkan setting `GATE_B_MODE=edge` di `.env` dan `src/config.py` sehingga server pusat laptop tidak menjalankan worker deteksi CPU lokal untuk Gerbang B.
+- [x] Task 6.2: Implementasikan proxy video feed `/api/dev/stream/B` langsung dari port 8080 Raspberry Pi 5 dengan fallback layar hitam berstatus OFFLINE jika Raspberry Pi 5 mati/terputus.
+- [x] Task 6.3: Implementasikan detak jantung berkala (heartbeat 15s) dari Raspberry Pi 5 ke server pusat via `/api/edge/heartbeat` dan endpoint `/api/edge/status`.
+- [x] Task 6.4: Validasi regression test suite komprehensif (60/60 tests PASSED).

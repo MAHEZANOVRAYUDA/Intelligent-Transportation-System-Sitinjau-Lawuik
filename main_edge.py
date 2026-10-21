@@ -125,7 +125,9 @@ class SitinjauEdgeRunner:
         signal.signal(signal.SIGTERM, _handler)
 
     def _open_capture(self) -> cv2.VideoCapture:
-        """Membuka koneksi RTSP dengan optimasi buffer size = 1 untuk anti-lag."""
+        """Membuka koneksi RTSP dengan optimasi buffer size = 1 dan TCP transport untuk anti-lag dan anti-packet-loss."""
+        if self.rtsp_url and self.rtsp_url.startswith("rtsp://"):
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
         src = 0 if not self.rtsp_url else self.rtsp_url
         cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG if isinstance(src, str) else cv2.CAP_ANY)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -247,13 +249,23 @@ class SitinjauEdgeRunner:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Edge Runner Sistem Monitoring Sitinjau Lauik")
+
     env_gate = os.environ.get("GATE_ID", "A").upper()
     default_gate = env_gate if env_gate in ("A", "B") else "A"
     parser.add_argument("--gate", choices=["A", "B"], default=default_gate, help="Pilihan gerbang (A atau B)")
+
     parser.add_argument("--rtsp-url", type=str, default=None, help="Override URL RTSP stream CCTV")
-    parser.add_argument("--server-url", type=str, default=None, help="Alamat Server Pusat (contoh: http://100.x.y.z:8000)")
+
+    default_server = os.environ.get("SERVER_URL", "http://localhost:8000")
+    parser.add_argument("--server-url", type=str, default=default_server, help="Alamat Server Pusat")
+
     parser.add_argument("--interval", type=int, default=5, help="Interval pengiriman laporan dalam menit (default 5)")
-    parser.add_argument("--backend", choices=["auto", "hailo", "ultralytics"], default="auto", help="Backend detektor")
+
+    env_backend = os.environ.get("DETECTION_BACKEND", "auto").lower()
+    default_backend = env_backend if env_backend in ("auto", "hailo", "ultralytics") else "auto"
+    parser.add_argument("--backend", choices=["auto", "hailo", "ultralytics"], default=default_backend, help="Backend detektor")
+
     parser.add_argument("--preview", action="store_true", help="Buka jendela visualisasi (debug onsite)")
 
     args = parser.parse_args()

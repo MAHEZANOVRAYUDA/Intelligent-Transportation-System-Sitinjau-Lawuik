@@ -165,7 +165,7 @@ class SitinjauEdgeRunner:
                 detections = self.detector.detect(frame)
 
                 # 2. Tracking Objek (Kalman Filter + Association)
-                tracks = self.tracker.update(detections, frame_shape=frame.shape[:2])
+                tracks = self.tracker.update(detections)
 
                 # 3. Hitung Garis Virtual
                 events = self.counter.update(tracks)
@@ -190,12 +190,15 @@ class SitinjauEdgeRunner:
                 if self.preview:
                     annotated = annotate_frame(
                         frame=frame,
-                        detections=detections,
+                        line=self.gate_cfg.counting_line,
                         tracks=tracks,
-                        counting_line=self.gate_cfg.counting_line,
+                        detections=detections,
+                        gate_id=self.gate_id,
+                        inference_fps=self.fps_meter,
                         counts_in=self.counter.counts_in,
                         counts_out=self.counter.counts_out,
                         lane_divider=self.gate_cfg.lane_divider,
+                        inbound_side=self.gate_cfg.inbound_side,
                     )
                     cv2.putText(
                         annotated,

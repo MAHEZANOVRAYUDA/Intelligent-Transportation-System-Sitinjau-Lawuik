@@ -256,7 +256,7 @@ class AssociationTracker:
         track.vote_class(det["class_name"], det["confidence"])
         track.prev_bbox = list(track.bbox)
 
-    def update(self, detections: list[dict]) -> list[Track]:
+    def update(self, detections: list[dict], *args, **kwargs) -> list[Track]:
         existing_ids = set(self._tracks.keys())
         for tid, kf in self._filters.items():
             track = self._tracks[tid]

@@ -1121,6 +1121,14 @@
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .hud-card-top-left {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
   }
 
   .hud-gate-badge {
@@ -1142,6 +1150,58 @@
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
     border: 1px solid rgba(245, 158, 11, 0.25);
+  }
+
+  .hud-header-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.36rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .hud-header-cta:hover {
+    transform: translateY(-1.5px);
+  }
+  .hud-header-cta:active {
+    transform: translateY(0);
+  }
+  .hud-header-cta:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  /* Styling Gerbang A: Amber / Gold Dishub */
+  .hud-header-cta.gate-a {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    color: #fbbf24;
+  }
+  .hud-header-cta.gate-a:hover {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: #0b1120;
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
+  }
+
+  /* Styling Gerbang B: Sky Blue / Cyan */
+  .hud-header-cta.gate-b {
+    background: rgba(61, 214, 255, 0.14);
+    border: 1px solid rgba(61, 214, 255, 0.45);
+    color: #38bdf8;
+  }
+  .hud-header-cta.gate-b:hover {
+    background: #0284c7;
+    border-color: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(2, 132, 199, 0.4);
   }
 
   .hud-gate-name {
@@ -1189,30 +1249,6 @@
   .hud-stat-val.text-lancar { color: var(--status-lancar); }
   .hud-stat-val.text-padat { color: var(--status-padat); }
   .hud-stat-val.text-macet { color: var(--status-macet); }
-
-  .hud-card-btn {
-    display: inline-flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border-strong);
-    color: var(--text-primary);
-    text-decoration: none;
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.6rem 0.95rem;
-    border-radius: 6px;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    margin-top: 0.35rem;
-  }
-  .hud-card-btn:hover {
-    background: var(--dishub-gold);
-    border-color: var(--dishub-gold);
-    color: #0a0f1d;
-    font-weight: 700;
-    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
-    transform: translateY(-1px);
-  }
 
   /* MapLibre Popup Custom (Ketika Marker Diklik) */
   .maplibregl-popup-content {
@@ -1798,11 +1834,21 @@
       <!-- Kamera Gerbang A (Padang Besi) -->
       <div class="camera-hud-card gate-a" id="hud-card-gate-a">
         <div class="hud-card-top">
-          <div class="hud-gate-badge">
-            <span class="status-bullet live" id="hud-bullet-a"></span>
-            <span>KAMERA GERBANG A</span>
+          <div class="hud-card-top-left">
+            <div class="hud-gate-badge">
+              <span class="status-bullet live" id="hud-bullet-a"></span>
+              <span>KAMERA GERBANG A</span>
+            </div>
+            <span class="hud-elevasi-chip">120 mdpl · KM 0,0</span>
           </div>
-          <span class="hud-elevasi-chip">120 mdpl · KM 0,0</span>
+          <a href="/gerbang?gerbang=a" class="hud-header-cta gate-a" title="Buka siaran langsung CCTV Gerbang A" aria-label="Buka siaran langsung CCTV Gerbang A">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            <span>Buka Kamera A</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
         </div>
         <div class="hud-gate-name">Jl. Padang Besi (Kota Padang)</div>
         <div class="hud-gate-sub">Kaki Tanjakan Barat · Pos Masuk Arus Menanjak ke Solok</div>
@@ -1820,20 +1866,26 @@
             <span class="hud-stat-val">Menanjak (Solok)</span>
           </div>
         </div>
-        <a href="/gerbang?gerbang=a" class="hud-card-btn">
-          <span>Buka Kamera Gerbang A</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
-        </a>
       </div>
 
       <!-- Kamera Gerbang B (Jembatan Timbang Solok) -->
       <div class="camera-hud-card gate-b" id="hud-card-gate-b">
         <div class="hud-card-top">
-          <div class="hud-gate-badge">
-            <span class="status-bullet standby" id="hud-bullet-b"></span>
-            <span>KAMERA GERBANG B</span>
+          <div class="hud-card-top-left">
+            <div class="hud-gate-badge">
+              <span class="status-bullet standby" id="hud-bullet-b"></span>
+              <span>KAMERA GERBANG B</span>
+            </div>
+            <span class="hud-elevasi-chip">1.120 mdpl · KM 16,5</span>
           </div>
-          <span class="hud-elevasi-chip">1.120 mdpl · KM 16,5</span>
+          <a href="/gerbang?gerbang=b" class="hud-header-cta gate-b" title="Buka siaran langsung CCTV Gerbang B" aria-label="Buka siaran langsung CCTV Gerbang B">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            <span>Buka Kamera B</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
         </div>
         <div class="hud-gate-name">Jembatan Timbang (Solok)</div>
         <div class="hud-gate-sub">Puncak Timur Koridor · Pos UPPKB Lubuk Selasih & Penimbangan Truk</div>
@@ -1851,10 +1903,6 @@
             <span class="hud-stat-val">Menurun (Padang)</span>
           </div>
         </div>
-        <a href="/gerbang?gerbang=b" class="hud-card-btn">
-          <span>Buka Kamera Gerbang B</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
-        </a>
       </div>
     </div>
 

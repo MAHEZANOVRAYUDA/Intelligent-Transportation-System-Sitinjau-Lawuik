@@ -247,8 +247,9 @@ class SitinjauEdgeRunner:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Edge Runner Sistem Monitoring Sitinjau Lauik")
-    parser.add_argument("--gate", choices=["A", "B"], default="A", help="Pilihan gerbang (A atau B)")
+    env_gate = os.environ.get("GATE_ID", "A").upper()
+    default_gate = env_gate if env_gate in ("A", "B") else "A"
+    parser.add_argument("--gate", choices=["A", "B"], default=default_gate, help="Pilihan gerbang (A atau B)")
     parser.add_argument("--rtsp-url", type=str, default=None, help="Override URL RTSP stream CCTV")
     parser.add_argument("--server-url", type=str, default=None, help="Alamat Server Pusat (contoh: http://100.x.y.z:8000)")
     parser.add_argument("--interval", type=int, default=5, help="Interval pengiriman laporan dalam menit (default 5)")

@@ -18,10 +18,25 @@ sudo timedatectl set-ntp true
 
 # 2. Optimalisasi Memori Swap (2GB) untuk Mencegah OOM
 echo "[2/7] Memperbesar Swap Memori menjadi 2048 MB..."
-sudo dphys-swapfile swapoff || true
-sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
-sudo dphys-swapfile setup
-sudo dphys-swapfile swapon
+if command -v dphys-swapfile &> /dev/null; then
+    sudo dphys-swapfile swapoff || true
+    sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile 2>/dev/null || true
+    sudo dphys-swapfile setup || true
+    sudo dphys-swapfile swapon || true
+else
+    echo "Menggunakan konfigurasi swapfile Linux standar..."
+    sudo swapoff /swapfile 2>/dev/null || true
+    if [ ! -f /swapfile ] || [ "$(stat -c%s /swapfile 2>/dev/null || echo 0)" -lt 2000000000 ]; then
+        sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+    fi
+    sudo swapon /swapfile 2>/dev/null || true
+    if ! grep -q "/swapfile" /etc/fstab; then
+        echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab
+    fi
+fi
+
 
 # 3. Aktifkan PCIe Gen 3 untuk Throughput Maksimal Hailo NPU
 echo "[3/7] Mengonfigurasi PCIe Gen 3 di /boot/firmware/config.txt..."

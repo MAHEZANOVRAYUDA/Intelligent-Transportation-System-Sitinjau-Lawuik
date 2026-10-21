@@ -195,8 +195,8 @@ class SitinjauEdgeRunner:
                         detections=detections,
                         gate_id=self.gate_id,
                         inference_fps=self.fps_meter,
-                        counts_in=self.counter.counts_in,
-                        counts_out=self.counter.counts_out,
+                        counts_in=self.counter.state.total_in,
+                        counts_out=self.counter.state.total_out,
                         lane_divider=self.gate_cfg.lane_divider,
                         inbound_side=self.gate_cfg.inbound_side,
                     )

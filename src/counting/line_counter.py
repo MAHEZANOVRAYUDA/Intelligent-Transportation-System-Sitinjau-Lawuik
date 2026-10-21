@@ -76,6 +76,14 @@ class LineCounter:
     def recent_events(self) -> list[dict]:
         return list(self._recent_events[-20:])
 
+    @property
+    def counts_in(self) -> dict[str, int]:
+        return self.state.total_in
+
+    @property
+    def counts_out(self) -> dict[str, int]:
+        return self.state.total_out
+
     def set_line(self, line: list[int]) -> None:
         if len(line) != 4:
             raise ValueError("counting_line harus [x1, y1, x2, y2]")

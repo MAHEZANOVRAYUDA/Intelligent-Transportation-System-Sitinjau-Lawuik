@@ -67,14 +67,21 @@ class HailoDetector(BaseDetector):
             vdevice = None
             init_errors = []
 
-            # Strategi 1: Direct Physical Allocation
+            # Strategi 1: Direct Physical Allocation (Polos VDevice() standar Raspberry Pi AI Kit)
             try:
-                params = VDevice.create_params()
-                vdevice = VDevice(params)
-                logger.info("Hailo VDevice berhasil diinisialisasi via Direct Physical Mode.")
-            except Exception as e_direct:
-                init_errors.append(f"Direct: {e_direct}")
-                logger.warning("Direct physical allocation gagal (%s). Mencoba Multi-Process Service (MPS)...", e_direct)
+                vdevice = VDevice()
+                logger.info("Hailo VDevice berhasil diinisialisasi via VDevice() polos.")
+            except Exception as e_plain:
+                init_errors.append(f"Plain VDevice: {e_plain}")
+                # Strategi 1B: VDevice dengan parameter device_count=1
+                try:
+                    params = VDevice.create_params()
+                    params.device_count = 1
+                    vdevice = VDevice(params)
+                    logger.info("Hailo VDevice berhasil diinisialisasi via VDevice(device_count=1).")
+                except Exception as e_direct:
+                    init_errors.append(f"Direct: {e_direct}")
+                    logger.warning("Direct physical allocation gagal (%s). Mencoba Multi-Process Service (MPS)...", e_direct)
 
                 # Strategi 2: Multi-Process Service (MPS) Mode (jika hailort.service aktif di Raspberry Pi OS)
                 try:

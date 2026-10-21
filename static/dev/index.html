@@ -174,6 +174,76 @@
     .coords { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted); }
     #cal-status { font-size: 0.75rem; min-height: 1.1rem; margin-top: 0.4rem; color: var(--mobil); }
 
+    /* Gate Switcher Toolbar */
+    .gate-switcher-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.65rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .gate-switcher {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+    .gate-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.45rem 1.15rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .gate-tab:hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .gate-tab.active {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: #f59e0b;
+      color: #fbbf24;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+    }
+    .gate-tab .tab-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.2s;
+    }
+    .gate-tab.active .tab-dot {
+      background: #f59e0b;
+      box-shadow: 0 0 8px #f59e0b;
+    }
+    .gate-tab .tab-sub {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .gate-tab.active .tab-sub {
+      color: rgba(251, 191, 36, 0.8);
+    }
+    .active-gate-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.25);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+    }
+
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
     }
@@ -183,13 +253,29 @@
   <header>
     <div style="display:flex;align-items:center;gap:0.75rem">
       <span class="dev-badge">DEV MODE</span>
-      <h1>Detection Debug — Gerbang A (Jl. Padang Besi, Kota Padang)</h1>
+      <h1 id="dev-page-title">Detection Debug — Gerbang A (Jl. Padang Besi, Kota Padang)</h1>
     </div>
     <div class="header-links">
       <span id="ws-status" style="font-size:0.8rem;color:var(--muted)">Connecting...</span>
       <a href="/">← Dashboard Produksi</a>
     </div>
   </header>
+
+  <div class="gate-switcher-bar">
+    <div class="gate-switcher" role="tablist">
+      <button type="button" class="gate-tab active" id="tab-gate-a" onclick="switchGate('A')">
+        <span class="tab-dot"></span>
+        <span>Gerbang A</span>
+        <span class="tab-sub">— Jl. Padang Besi (Padang)</span>
+      </button>
+      <button type="button" class="gate-tab" id="tab-gate-b" onclick="switchGate('B')">
+        <span class="tab-dot"></span>
+        <span>Gerbang B</span>
+        <span class="tab-sub">— Jembatan Timbang (Solok)</span>
+      </button>
+    </div>
+    <div class="active-gate-badge" id="active-gate-badge">Gerbang Aktif: GERBANG A</div>
+  </div>
 
   <div class="layout">
     <div class="video-panel">
@@ -428,7 +514,23 @@
   </div>
 
   <script>
-    const GATE = 'A';
+    let currentGate = 'A';
+    let currentWS = null;
+    let wsReconnectTimer = null;
+
+    const GATE_METADATA = {
+      'A': {
+        name: 'GERBANG A',
+        title: 'Detection Debug — Gerbang A (Jl. Padang Besi, Kota Padang)',
+        desc: 'Jl. Padang Besi, Kota Padang'
+      },
+      'B': {
+        name: 'GERBANG B',
+        title: 'Detection Debug — Gerbang B (Jembatan Timbang, Solok)',
+        desc: 'Jembatan Timbang, Solok'
+      }
+    };
+
     const wrap = document.getElementById('video-wrap');
     const img = document.getElementById('dev-stream');
     const canvas = document.getElementById('line-canvas');
@@ -437,6 +539,70 @@
     let calibrateMode = false;
     let clickStep = 0;
     let editTarget = 'count';
+
+    function switchGate(gateId) {
+      gateId = (gateId || 'A').toUpperCase();
+      if (gateId !== 'A' && gateId !== 'B') gateId = 'A';
+      currentGate = gateId;
+
+      // Perbarui UI Tabs & Badges
+      const tabA = document.getElementById('tab-gate-a');
+      const tabB = document.getElementById('tab-gate-b');
+      if (tabA) tabA.classList.toggle('active', gateId === 'A');
+      if (tabB) tabB.classList.toggle('active', gateId === 'B');
+
+      const meta = GATE_METADATA[gateId];
+      const pageTitle = document.getElementById('dev-page-title');
+      if (pageTitle) pageTitle.textContent = meta.title;
+
+      const badge = document.getElementById('active-gate-badge');
+      if (badge) badge.textContent = 'Gerbang Aktif: ' + meta.name;
+
+      // Sinkronkan parameter URL tanpa reload halaman (?gate=a atau ?gate=b)
+      try {
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('gate', gateId.toLowerCase());
+        window.history.replaceState({}, '', newUrl);
+      } catch (e) {}
+
+      // Reset garis kalibrasi draft dan status mode
+      calibrateMode = false;
+      clickStep = 0;
+      dragHandle = null;
+      wrap.classList.remove('calibrate');
+      const calBtn = document.getElementById('btn-calibrate');
+      if (calBtn) {
+        calBtn.classList.remove('active');
+        calBtn.textContent = 'Mode kalibrasi';
+      }
+      setStatus('');
+
+      // Ganti Video Stream MJPEG ke Gerbang Terpilih
+      const offlineMsg = document.getElementById('video-offline');
+      if (offlineMsg) {
+        offlineMsg.style.display = 'flex';
+        offlineMsg.textContent = 'Menghubungkan ke CCTV ' + meta.name + '...';
+      }
+      img.src = '/api/dev/stream/' + gateId + '?t=' + Date.now();
+
+      // Sambungkan ulang WebSocket khusus gerbang terpilih
+      connectWS();
+
+      // Ambil konfigurasi garis & koordinat gerbang dari server
+      fetchGateState(gateId);
+    }
+
+    async function fetchGateState(gateId) {
+      try {
+        const res = await fetch('/api/dev/state/' + gateId);
+        if (res.ok) {
+          const data = await res.json();
+          updateUI(data);
+        }
+      } catch (err) {
+        console.warn('Gagal memuat state gerbang', gateId, err);
+      }
+    }
     let draftLine = null;
     let draftLane = null;
     let frameSize = { w: 2304, h: 1296 };
@@ -546,7 +712,7 @@
         persist,
         reset_counts: reset,
       };
-      const res = await fetch('/api/dev/calibrate/' + GATE, {
+      const res = await fetch('/api/dev/calibrate/' + currentGate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -1021,22 +1187,61 @@
     });
 
     function connectWS() {
+      if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+      }
+      if (currentWS) {
+        currentWS.onclose = null;
+        try { currentWS.close(); } catch(e) {}
+        currentWS = null;
+      }
+
+      const gateId = currentGate;
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(proto + '//' + location.host + '/api/dev/ws/' + GATE);
+      const ws = new WebSocket(proto + '//' + location.host + '/api/dev/ws/' + gateId);
+      currentWS = ws;
+
+      const wsStatus = document.getElementById('ws-status');
+      if (wsStatus) {
+        wsStatus.textContent = 'Menghubungkan (' + gateId + ')...';
+        wsStatus.style.color = 'var(--muted)';
+      }
+
       ws.onopen = () => {
-        document.getElementById('ws-status').textContent = '● Live';
-        document.getElementById('ws-status').style.color = '#3dd68c';
+        if (ws !== currentWS) return;
+        if (wsStatus) {
+          wsStatus.textContent = '● Live (' + gateId + ')';
+          wsStatus.style.color = '#3dd68c';
+        }
       };
       ws.onmessage = e => {
+        if (ws !== currentWS) return;
         try { updateUI(JSON.parse(e.data)); } catch(err) {}
       };
       ws.onclose = () => {
-        document.getElementById('ws-status').textContent = '● Reconnecting...';
-        document.getElementById('ws-status').style.color = '#ff453a';
-        setTimeout(connectWS, 2000);
+        if (ws !== currentWS) return;
+        if (wsStatus) {
+          wsStatus.textContent = '● Reconnecting (' + gateId + ')...';
+          wsStatus.style.color = '#ff453a';
+        }
+        wsReconnectTimer = setTimeout(() => {
+          if (currentGate === gateId) connectWS();
+        }, 2000);
+      };
+      ws.onerror = () => {
+        try { ws.close(); } catch(e) {}
       };
     }
-    connectWS();
+
+    // Inisialisasi awal berdasarkan parameter URL (?gate=b atau ?gate=a)
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialGate = (urlParams.get('gate') || urlParams.get('gerbang') || 'A').toUpperCase();
+    if (initialGate === 'B') {
+      switchGate('B');
+    } else {
+      switchGate('A');
+    }
 
     img.addEventListener('error', () => {
       document.getElementById('video-offline').style.display = 'flex';

@@ -80,22 +80,44 @@ class HailoDetector(BaseDetector):
             )
 
             self._loaded = True
+            self.init_error = None
             logger.info("Hailo-8L NPU berhasil dimuat dari %s!", self.hef_path)
             return True
 
         except ImportError:
-            logger.warning(
-                "Driver 'hailo_platform' (pyhailort) tidak ditemukan di environment ini. "
-                "Mode Simulasi diaktifkan untuk pengujian lokal."
-            )
-            self._mock_mode = True
-            self._loaded = True
-            return True
+            self.init_error = "Driver 'hailo_platform' (pyhailort) tidak terpasang"
+            if self._mock_mode:
+                logger.warning(
+                    "Driver 'hailo_platform' tidak ditemukan. Menjalankan HailoDetector dalam mode mock simulasi."
+                )
+                self._loaded = True
+                return True
+            else:
+                logger.info(
+                    "Driver 'hailo_platform' (pyhailort) tidak ditemukan di environment ini."
+                )
+                self._loaded = False
+                return False
         except Exception as e:
-            logger.error("Gagal inisialisasi Hailo NPU: %s. Mengaktifkan mode simulasi...", e)
-            self._mock_mode = True
-            self._loaded = True
-            return True
+            err_msg = str(e)
+            self.init_error = err_msg
+            self._loaded = False
+            self._mock_mode = False
+            if "74" in err_msg or "HAILO_OUT_OF_PHYSICAL_DEVICES" in err_msg or "not enough free devices" in err_msg:
+                logger.error(
+                    "Gagal inisialisasi Hailo NPU: Chip Hailo-8L sedang sibuk atau terkunci oleh proses lain (status 74: HAILO_OUT_OF_PHYSICAL_DEVICES).\n"
+                    "  [PANDUAN TROUBLESHOOTING RASPBERRY PI]:\n"
+                    "  1. Layanan background 'sitinjau-edge.service' kemungkinan sedang berjalan otomatis saat boot.\n"
+                    "     Hentikan service jika ingin menjalankan runner manual di terminal:\n"
+                    "       sudo systemctl stop sitinjau-edge\n"
+                    "  2. Periksa proses lain yang mengunci chip NPU:\n"
+                    "       sudo fuser -v /dev/hailo0\n"
+                    "  3. Periksa status deteksi fisik chip PCIe:\n"
+                    "       hailortcli scan"
+                )
+            else:
+                logger.error("Gagal inisialisasi Hailo NPU: %s", e)
+            return False
 
     @property
     def is_loaded(self) -> bool:

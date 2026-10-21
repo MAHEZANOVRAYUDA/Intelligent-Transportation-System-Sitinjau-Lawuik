@@ -125,9 +125,18 @@ class SitinjauEdgeRunner:
         signal.signal(signal.SIGTERM, _handler)
 
     def _open_capture(self) -> cv2.VideoCapture:
-        """Membuka koneksi RTSP dengan optimasi buffer size = 1 dan TCP transport untuk anti-lag dan anti-packet-loss."""
+        """Membuka koneksi RTSP dengan optimasi TCP transport, nobuffer, low-delay, dan peredaman log spam POC."""
         if self.rtsp_url and self.rtsp_url.startswith("rtsp://"):
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;0|analyzeduration;1000000|probesize;1000000"
+            )
+            os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
+            os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "16"
+            try:
+                cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
+            except Exception:
+                pass
+
         src = 0 if not self.rtsp_url else self.rtsp_url
         cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG if isinstance(src, str) else cv2.CAP_ANY)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -144,7 +153,12 @@ class SitinjauEdgeRunner:
                 time.sleep(reconnect_delay)
                 continue
 
-            logger.info("Koneksi kamera aktif! Memulai pemrosesan video...")
+            logger.info("Koneksi kamera aktif! Menstabilkan decoder stream...")
+            # Buang beberapa frame awal agar paket I-frame (SPS/PPS) sinkron dan tidak menimbulkan artefak POC
+            for _ in range(3):
+                cap.grab()
+
+            logger.info("Decoder stabil! Memulai pemrosesan deteksi video...")
             prev_time = time.time()
 
             while self.running:

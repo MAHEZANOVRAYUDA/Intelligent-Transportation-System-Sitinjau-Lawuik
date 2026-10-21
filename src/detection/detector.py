@@ -39,10 +39,12 @@ class VehicleDetector(BaseDetector):
                     self._loaded = True
                     logger.info("VehicleDetector menggunakan backend Hailo NPU: %s", hef_path)
                     return True
-                elif self._backend == "hailo":
-                    # Jika eksplisit hailo diminta
-                    self._loaded = self._hailo_detector.is_loaded
-                    return self._loaded
+                else:
+                    hailo_err = getattr(self._hailo_detector, "init_error", "NPU hardware tidak siap")
+                    logger.warning(
+                        "Inisialisasi Hailo NPU tidak berhasil (%s). Mengaktifkan fallback otomatis ke Ultralytics YOLOv8 agar pendeteksian kendaraan tetap berjalan...",
+                        hailo_err,
+                    )
             except Exception as e:
                 logger.warning("Inisialisasi Hailo gagal (%s), fallback ke Ultralytics...", e)
 

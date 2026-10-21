@@ -104,7 +104,9 @@ class DetectionWorker:
                 logger.warning("Detection disabled — model gagal dimuat")
                 self._enabled = False
 
-        for gate_id in self.registry.all():
+        raw_settings, _ = get_settings()
+        all_gate_ids = set(self.registry.all().keys()) | set(raw_settings.get("gates", {}).keys())
+        for gate_id in all_gate_ids:
             gate_cfg = get_gate_config(gate_id)
             if gate_cfg:
                 self._trackers[gate_id] = SimpleTracker(
@@ -126,7 +128,14 @@ class DetectionWorker:
                     inbound_side=gate_cfg.inbound_side,
                     strict_lane_filter=self._strict_lane_filter,
                 )
-                self._debug_states[gate_id] = GateDebugState()
+                self._debug_states[gate_id] = GateDebugState(
+                    counting_line=list(gate_cfg.counting_line),
+                    entry_direction=gate_cfg.entry_direction,
+                    lane_divider=list(gate_cfg.lane_divider) if gate_cfg.lane_divider else None,
+                    inbound_side=gate_cfg.inbound_side or "left",
+                    frame_width=2304,
+                    frame_height=1296,
+                )
                 self._infer_times[gate_id] = []
                 self._detect_counters[gate_id] = 0
                 self._last_detections[gate_id] = []
@@ -151,26 +160,46 @@ class DetectionWorker:
     def get_debug_state(self, gate_id: str) -> dict:
         with self._debug_lock:
             state = self._debug_states.get(gate_id)
-            if not state:
-                return {}
             counter = self._counters.get(gate_id)
+            if not state and not counter:
+                gate_cfg = get_gate_config(gate_id)
+                if not gate_cfg:
+                    return {}
+                return {
+                    "timestamp": 0.0,
+                    "inference_fps": 0.0,
+                    "detection_count": 0,
+                    "track_count": 0,
+                    "detections": [],
+                    "tracks": [],
+                    "counts_in": {},
+                    "counts_out": {},
+                    "live_class_counts": {},
+                    "recent_crossings": [],
+                    "counting_line": list(gate_cfg.counting_line),
+                    "entry_direction": gate_cfg.entry_direction,
+                    "lane_divider": list(gate_cfg.lane_divider) if gate_cfg.lane_divider else None,
+                    "inbound_side": gate_cfg.inbound_side or "left",
+                    "frame_width": 2304,
+                    "frame_height": 1296,
+                }
             return {
-                "timestamp": state.timestamp,
-                "inference_fps": round(state.inference_fps, 1),
-                "detection_count": len(state.detections),
-                "track_count": len(state.tracks),
-                "detections": state.detections,
-                "tracks": state.tracks,
-                "counts_in": state.counts_in,
-                "counts_out": state.counts_out,
-                "live_class_counts": state.live_class_counts,
-                "recent_crossings": state.recent_crossings,
-                "counting_line": list(counter.line) if counter else state.counting_line,
-                "entry_direction": counter.entry_direction if counter else state.entry_direction,
-                "lane_divider": list(counter.lane_divider) if counter and counter.lane_divider else state.lane_divider,
-                "inbound_side": counter.inbound_side if counter else state.inbound_side,
-                "frame_width": state.frame_width,
-                "frame_height": state.frame_height,
+                "timestamp": state.timestamp if state else 0.0,
+                "inference_fps": round(state.inference_fps, 1) if state else 0.0,
+                "detection_count": len(state.detections) if state else 0,
+                "track_count": len(state.tracks) if state else 0,
+                "detections": state.detections if state else [],
+                "tracks": state.tracks if state else [],
+                "counts_in": state.counts_in if state else {},
+                "counts_out": state.counts_out if state else {},
+                "live_class_counts": state.live_class_counts if state else {},
+                "recent_crossings": state.recent_crossings if state else [],
+                "counting_line": list(counter.line) if counter else (state.counting_line if state else []),
+                "entry_direction": counter.entry_direction if counter else (state.entry_direction if state else "up"),
+                "lane_divider": list(counter.lane_divider) if counter and counter.lane_divider else (state.lane_divider if state else None),
+                "inbound_side": counter.inbound_side if counter else (state.inbound_side if state else "left"),
+                "frame_width": (state.frame_width if state and state.frame_width else 2304),
+                "frame_height": (state.frame_height if state and state.frame_height else 1296),
             }
 
     def get_live_class_counts(self) -> dict[str, int]:
@@ -195,7 +224,29 @@ class DetectionWorker:
         counter = self._counters.get(gate_id)
         tracker = self._trackers.get(gate_id)
         if counter is None:
-            raise KeyError(f"Gerbang {gate_id} tidak aktif")
+            gate_cfg = get_gate_config(gate_id)
+            if gate_cfg:
+                self._counters[gate_id] = LineCounter(
+                    line=gate_cfg.counting_line,
+                    entry_direction=gate_cfg.entry_direction,
+                    gate_id=gate_id,
+                    min_track_age=self._min_track_age,
+                    min_confidence=self._min_confidence,
+                    lane_divider=gate_cfg.lane_divider,
+                    inbound_side=gate_cfg.inbound_side,
+                    strict_lane_filter=self._strict_lane_filter,
+                )
+                counter = self._counters[gate_id]
+                self._debug_states[gate_id] = GateDebugState(
+                    counting_line=list(gate_cfg.counting_line),
+                    entry_direction=gate_cfg.entry_direction,
+                    lane_divider=list(gate_cfg.lane_divider) if gate_cfg.lane_divider else None,
+                    inbound_side=gate_cfg.inbound_side or "left",
+                    frame_width=2304,
+                    frame_height=1296,
+                )
+            else:
+                raise KeyError(f"Gerbang {gate_id} tidak aktif")
 
         if counting_line is not None:
             counter.set_line(counting_line)

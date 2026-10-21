@@ -6,6 +6,9 @@ import asyncio
 import os
 import signal
 
+import cv2
+import httpx
+import numpy as np
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -223,23 +226,75 @@ async def simulate_traffic(payload: SimulateTrafficRequest = SimulateTrafficRequ
     }
 
 
+def _make_offline_frame(text1: str, text2: str) -> bytes:
+    """Membuat frame gambar status offline untuk ditampilkan ke viewer saat edge node mati."""
+    img = np.zeros((360, 640, 3), dtype=np.uint8)
+    cv2.putText(img, text1, (40, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+    cv2.putText(img, text2, (40, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
+    ret, jpeg = cv2.imencode(".jpg", img)
+    return jpeg.tobytes() if ret else b""
+
+
 async def _dev_mjpeg_generator(gate_id: str):
     boundary = b"frame"
-    while True:
-        worker = state.detection_worker
-        if worker is None:
-            await asyncio.sleep(0.5)
-            continue
+    from src.config import get_settings
+    _, env = get_settings()
 
-        jpeg = worker.get_debug_jpeg(gate_id)
-        if jpeg:
+    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
+
+    if is_edge_b:
+        # Stream di-proxy murni dari Edge Node (Raspberry Pi 5)
+        while True:
+            node_info = state.edge_nodes.get("B", {})
+            is_online = node_info.get("status") == "online"
+            edge_ip = getattr(env, "gate_b_edge_url", "") or (
+                f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
+            )
+
+            if is_online and edge_ip:
+                try:
+                    stream_url = f"{edge_ip.rstrip('/')}/stream"
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        async with client.stream("GET", stream_url) as resp:
+                            if resp.status_code == 200:
+                                async for chunk in resp.aiter_bytes():
+                                    yield chunk
+                                    # Cek status periodik
+                                    if state.edge_nodes.get("B", {}).get("status") != "online":
+                                        break
+                except Exception:
+                    pass
+
+            # Jika Raspberry Pi mati / offline, kirim frame hitam status offline
+            offline_jpeg = _make_offline_frame(
+                "EDGE NODE GERBANG B: OFFLINE",
+                "Raspberry Pi 5 dimatikan atau terputus",
+            )
             yield (
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
-                + jpeg + b"\r\n"
+                b"Content-Length: " + str(len(offline_jpeg)).encode() + b"\r\n\r\n"
+                + offline_jpeg + b"\r\n"
             )
-        await asyncio.sleep(0.08)
+            await asyncio.sleep(1.0)
+
+    else:
+        # Mode lokal worker laptop
+        while True:
+            worker = state.detection_worker
+            if worker is None:
+                await asyncio.sleep(0.5)
+                continue
+
+            jpeg = worker.get_debug_jpeg(gate_id)
+            if jpeg:
+                yield (
+                    b"--" + boundary + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
+                    + jpeg + b"\r\n"
+                )
+            await asyncio.sleep(0.08)
 
 
 @router.get("/stream/{gate_id}")
@@ -256,6 +311,35 @@ async def dev_stream(gate_id: str):
 async def dev_state(gate_id: str):
     """State deteksi terkini untuk panel debug."""
     gate_id = gate_id.upper()
+    from src.config import get_settings
+    _, env = get_settings()
+
+    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
+    if is_edge_b:
+        from src.config import get_gate_config
+        gate_cfg = get_gate_config("B")
+        node = state.edge_nodes.get("B", {})
+        counts = node.get("counts", {})
+        edge_cal = state.edge_calibrations.get("B", {})
+        return {
+            "mode": "edge",
+            "gate_id": "B",
+            "status": node.get("status", "offline"),
+            "backend": node.get("backend", "Hailo-8L"),
+            "inference_fps": node.get("fps", 0.0),
+            "total_in": counts.get("in", 0),
+            "total_out": counts.get("out", 0),
+            "buffer_count": node.get("buffer_count", 0),
+            "ip": node.get("ip"),
+            "tracks": [],
+            "classes": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+            "counting_line": edge_cal.get("counting_line", gate_cfg.counting_line if gate_cfg else [100, 400, 900, 400]),
+            "entry_direction": edge_cal.get("entry_direction", gate_cfg.entry_direction if gate_cfg else "down"),
+            "lane_divider": edge_cal.get("lane_divider", gate_cfg.lane_divider if gate_cfg else None),
+            "inbound_side": edge_cal.get("inbound_side", gate_cfg.inbound_side if gate_cfg else "left"),
+            "running": node.get("status") == "online",
+        }
+
     worker = state.detection_worker
     if worker is None:
         return {"error": "Detection worker belum aktif"}
@@ -266,14 +350,52 @@ async def dev_state(gate_id: str):
 async def calibrate_gate(gate_id: str, payload: CalibrateRequest):
     """Terapkan garis counting baru; opsional simpan ke settings.yaml."""
     gate_id = gate_id.upper()
-    worker = state.detection_worker
-    if worker is None:
-        raise HTTPException(status_code=503, detail="Detection worker belum aktif")
+    from src.config import get_settings
+    _, env = get_settings()
+
+    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
 
     if payload.entry_direction and payload.entry_direction not in ("up", "down"):
         raise HTTPException(status_code=400, detail="entry_direction harus up atau down")
     if payload.inbound_side and payload.inbound_side not in ("left", "right"):
         raise HTTPException(status_code=400, detail="inbound_side harus left atau right")
+
+    if is_edge_b:
+        from src.config import get_gate_config, persist_gate_calibration
+        cfg = get_gate_config("B")
+        cur_line = payload.counting_line or (cfg.counting_line if cfg else [100, 400, 900, 400])
+        cur_dir = payload.entry_direction or (cfg.entry_direction if cfg else "down")
+        cur_divider = payload.lane_divider if payload.lane_divider is not None else (cfg.lane_divider if cfg else None)
+        cur_inbound = payload.inbound_side or (cfg.inbound_side if cfg else "left")
+
+        state.edge_calibrations["B"] = {
+            "counting_line": cur_line,
+            "entry_direction": cur_dir,
+            "lane_divider": cur_divider,
+            "inbound_side": cur_inbound,
+        }
+
+        if payload.persist:
+            persist_gate_calibration(
+                gate_id="B",
+                counting_line=cur_line,
+                entry_direction=cur_dir,
+                lane_divider=payload.lane_divider,
+                inbound_side=payload.inbound_side,
+            )
+        return {
+            "status": "ok",
+            "gate_id": "B",
+            "counting_line": cur_line,
+            "entry_direction": cur_dir,
+            "lane_divider": cur_divider,
+            "inbound_side": cur_inbound,
+            "persisted": payload.persist,
+        }
+
+    worker = state.detection_worker
+    if worker is None:
+        raise HTTPException(status_code=503, detail="Detection worker belum aktif")
 
     try:
         return worker.apply_calibration(

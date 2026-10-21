@@ -157,6 +157,8 @@ class DetectionConfig(BaseModel):
 class AppSettings(BaseSettings):
     gate_a_rtsp_url: str = ""
     gate_b_rtsp_url: str = ""
+    gate_b_mode: str = "auto"  # "auto" | "edge" | "local"
+    gate_b_edge_url: str = ""  # override misal: "http://172.20.10.x:8080"
     database_url: str = "sqlite:///./data/sitinjau_laut.db"
     api_host: str = "0.0.0.0"
     api_port: int = 8000

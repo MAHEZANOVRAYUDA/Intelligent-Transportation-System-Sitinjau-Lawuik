@@ -61,11 +61,15 @@ def test_hailo_detector_mps_strategy_success():
     with patch.dict("sys.modules", {"hailo_platform": MagicMock()}):
         import sys
         mock_hp = sys.modules["hailo_platform"]
-        # Panggilan pertama (direct) gagal, panggilan kedua (MPS) sukses
+        # Panggilan pertama (plain) & kedua (direct) gagal, panggilan ketiga (MPS) sukses
         mock_vdevice = MagicMock()
         mock_network_group = MagicMock()
         mock_vdevice.configure.return_value = [mock_network_group]
-        mock_hp.VDevice.side_effect = [RuntimeError("status=74 direct busy"), mock_vdevice]
+        mock_hp.VDevice.side_effect = [
+            RuntimeError("status=74 plain busy"),
+            RuntimeError("status=74 direct busy"),
+            mock_vdevice,
+        ]
 
         loaded = detector.load()
         assert loaded is True

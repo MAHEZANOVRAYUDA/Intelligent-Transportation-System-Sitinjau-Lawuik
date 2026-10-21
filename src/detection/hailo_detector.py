@@ -66,6 +66,7 @@ class HailoDetector(BaseDetector):
             
             vdevice = None
             init_errors = []
+            last_err: Exception | None = None
 
             # Strategi 1: Direct Physical Allocation (Polos VDevice() standar Raspberry Pi AI Kit)
             try:
@@ -73,7 +74,10 @@ class HailoDetector(BaseDetector):
                 logger.info("Hailo VDevice berhasil diinisialisasi via VDevice() polos.")
             except Exception as e_plain:
                 init_errors.append(f"Plain VDevice: {e_plain}")
-                # Strategi 1B: VDevice dengan parameter device_count=1
+                last_err = e_plain
+
+            # Strategi 1B: VDevice dengan parameter device_count=1
+            if vdevice is None:
                 try:
                     params = VDevice.create_params()
                     params.device_count = 1
@@ -81,9 +85,10 @@ class HailoDetector(BaseDetector):
                     logger.info("Hailo VDevice berhasil diinisialisasi via VDevice(device_count=1).")
                 except Exception as e_direct:
                     init_errors.append(f"Direct: {e_direct}")
-                    logger.warning("Direct physical allocation gagal (%s). Mencoba Multi-Process Service (MPS)...", e_direct)
+                    last_err = e_direct
 
-                # Strategi 2: Multi-Process Service (MPS) Mode (jika hailort.service aktif di Raspberry Pi OS)
+            # Strategi 2: Multi-Process Service (MPS) Mode (jika hailort.service aktif di Raspberry Pi OS)
+            if vdevice is None:
                 try:
                     params_mps = VDevice.create_params()
                     params_mps.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
@@ -93,22 +98,29 @@ class HailoDetector(BaseDetector):
                     logger.info("Hailo VDevice berhasil diinisialisasi via Multi-Process Service (MPS)!")
                 except Exception as e_mps:
                     init_errors.append(f"MPS: {e_mps}")
-                    logger.warning("MPS mode gagal (%s). Mencoba Explicit Scan Device IDs...", e_mps)
+                    last_err = e_mps
 
-                    # Strategi 3: Explicit Scan Device IDs
-                    try:
-                        scan_devices = Device.scan()
-                        if scan_devices:
-                            params_scan = VDevice.create_params()
-                            params_scan.device_ids = scan_devices
-                            vdevice = VDevice(params_scan)
-                            logger.info("Hailo VDevice berhasil diinisialisasi via explicit device ID: %s", scan_devices)
-                        else:
-                            raise RuntimeError("Device.scan() tidak menemukan device fisik aktif.")
-                    except Exception as e_scan:
-                        init_errors.append(f"Device Scan: {e_scan}")
-                        logger.error("Seluruh 3 strategi alokasi Hailo VDevice gagal: %s", " | ".join(init_errors))
-                        raise e_direct
+            # Strategi 3: Explicit Scan Device IDs
+            if vdevice is None:
+                try:
+                    scan_devices = Device.scan()
+                    if scan_devices:
+                        params_scan = VDevice.create_params()
+                        params_scan.device_ids = scan_devices
+                        vdevice = VDevice(params_scan)
+                        logger.info("Hailo VDevice berhasil diinisialisasi via explicit device ID: %s", scan_devices)
+                    else:
+                        raise RuntimeError("Device.scan() tidak menemukan device fisik aktif.")
+                except Exception as e_scan:
+                    init_errors.append(f"Device Scan: {e_scan}")
+                    last_err = e_scan
+
+            if vdevice is None:
+                err_summary = " | ".join(init_errors)
+                logger.error("Seluruh strategi alokasi Hailo VDevice gagal: %s", err_summary)
+                if last_err is not None:
+                    raise last_err
+                raise RuntimeError(f"Gagal mengalokasikan Hailo VDevice: {err_summary}")
 
             self._vdevice = vdevice
             self._hef = HEF(str(self.hef_path))

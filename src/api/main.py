@@ -9,7 +9,7 @@ import psutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,10 +60,14 @@ async def lifespan(app: FastAPI):
         state.stream_registry.register(
             RTSPStreamManager(rtsp_url=env.gate_a_rtsp_url, gate_id="A")
         )
-    if env.gate_b_rtsp_url:
+    # Gerbang B hanya didaftarkan ke worker laptop jika bukan mode murni 'edge'
+    is_edge_b = getattr(env, "gate_b_mode", "auto").lower() == "edge"
+    if env.gate_b_rtsp_url and not is_edge_b:
         state.stream_registry.register(
             RTSPStreamManager(rtsp_url=env.gate_b_rtsp_url, gate_id="B")
         )
+    elif is_edge_b:
+        logger.info("Gerbang B dikonfigurasi sebagai EDGE NODE (Raspberry Pi 5) — Worker deteksi lokal laptop untuk Gerbang B dinonaktifkan.")
 
     state.stream_registry.start_all()
 
@@ -300,7 +304,7 @@ class PayloadGerbang(BaseModel):
 
 
 @app.post("/api/lapor-lalin")
-async def terima_lapor_lalin(payload: PayloadGerbang):
+async def terima_lapor_lalin(payload: PayloadGerbang, request: Request):
     """
     Endpoint Ingestion data lalu lintas dari Edge Node (Raspberry Pi 5 + Hailo-8L).
     Menerima agregasi interval (default 5 menit) dan memproses sesuai standar PKJI 2023.
@@ -308,6 +312,15 @@ async def terima_lapor_lalin(payload: PayloadGerbang):
     from src.config import get_pkji_config
     pkji = get_pkji_config()
     kapasitas_jalan = float(pkji.practical_capacity_c)
+
+    # Update status Edge Node pada server pusat
+    gid = payload.gate_id.upper().replace("GERBANG_", "")
+    client_ip = request.client.host if request.client else None
+    if gid in state.edge_nodes:
+        state.edge_nodes[gid]["last_seen"] = time.time()
+        state.edge_nodes[gid]["status"] = "online"
+        if client_ip:
+            state.edge_nodes[gid]["ip"] = client_ip
 
     # Konversi bobot EKR/EMP sesuai arah
     is_naik = payload.arah.lower() in ("menanjak", "in", "up", "padang_to_solok")
@@ -342,12 +355,6 @@ async def terima_lapor_lalin(payload: PayloadGerbang):
     else:
         status = "MACET / ARUS JENUH"
 
-    # Update status Edge Node pada server pusat
-    gid = payload.gate_id.upper().replace("GERBANG_", "")
-    if gid in state.edge_nodes:
-        state.edge_nodes[gid]["last_seen"] = time.time()
-        state.edge_nodes[gid]["status"] = "online"
-
     logger.info(
         "[LAPOR-LALIN INGEST] %s (%s) -> Q=%.1f smp/jam, C=%.1f, DS=%.3f, Status=%s",
         payload.gate_id,
@@ -380,9 +387,10 @@ class EdgeHeartbeatPayload(BaseModel):
 
 
 @app.post("/api/edge/heartbeat")
-async def edge_heartbeat(payload: EdgeHeartbeatPayload):
+async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
     """Menerima sinyal detak jantung (heartbeat) & status performa NPU dari Edge Node."""
     gid = payload.gate_id.upper().replace("GERBANG_", "")
+    client_ip = request.client.host if request.client else None
     if gid in state.edge_nodes:
         state.edge_nodes[gid].update({
             "status": "online",
@@ -391,6 +399,7 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload):
             "fps": round(payload.fps, 1),
             "buffer_count": payload.buffer_count,
             "counts": {"in": payload.total_in, "out": payload.total_out},
+            "ip": client_ip,
         })
     return {"status": "ok", "gate_id": gid}
 

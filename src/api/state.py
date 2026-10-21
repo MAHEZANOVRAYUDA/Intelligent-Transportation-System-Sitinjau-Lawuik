@@ -31,3 +31,6 @@ edge_nodes: dict[str, dict] = {
         "buffer_count": 0,
     },
 }
+
+# Menyimpan kalibrasi runtime sementara untuk edge node
+edge_calibrations: dict[str, dict] = {}

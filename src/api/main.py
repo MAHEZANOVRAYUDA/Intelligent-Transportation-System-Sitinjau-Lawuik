@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import psutil
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -152,6 +153,20 @@ async def dev_dashboard():
     return HTMLResponse("<h1>Dev Dashboard</h1><p>File belum tersedia.</p>")
 
 
+def get_edge_nodes_status() -> dict:
+    now = time.time()
+    result = {}
+    for gid, node in state.edge_nodes.items():
+        last = node.get("last_seen")
+        is_online = (last is not None) and ((now - last) <= 60.0)
+        result[gid] = {
+            **node,
+            "status": "online" if is_online else "offline",
+            "seconds_since_last_seen": round(now - last, 1) if last else None,
+        }
+    return result
+
+
 def _build_current_snapshot() -> dict:
     snap = state.occupancy_manager.snapshot_to_dict()
     if state.detection_worker:
@@ -162,6 +177,7 @@ def _build_current_snapshot() -> dict:
         snap["live_class_counts"] = {}
     snap["today_crossings"] = get_today_crossings()
     snap["streams"] = state.stream_registry.get_status_dict()
+    snap["edge_nodes"] = get_edge_nodes_status()
     try:
         snap["hardware"] = {
             "cpu_percent": psutil.cpu_percent(interval=None),
@@ -326,6 +342,12 @@ async def terima_lapor_lalin(payload: PayloadGerbang):
     else:
         status = "MACET / ARUS JENUH"
 
+    # Update status Edge Node pada server pusat
+    gid = payload.gate_id.upper().replace("GERBANG_", "")
+    if gid in state.edge_nodes:
+        state.edge_nodes[gid]["last_seen"] = time.time()
+        state.edge_nodes[gid]["status"] = "online"
+
     logger.info(
         "[LAPOR-LALIN INGEST] %s (%s) -> Q=%.1f smp/jam, C=%.1f, DS=%.3f, Status=%s",
         payload.gate_id,
@@ -345,4 +367,36 @@ async def terima_lapor_lalin(payload: PayloadGerbang):
         "derajat_kejenuhan_ds": ds,
         "keputusan_pakar": status,
     }
+
+
+class EdgeHeartbeatPayload(BaseModel):
+    gate_id: str
+    backend: str = "hailo"
+    fps: float = 0.0
+    buffer_count: int = 0
+    total_in: int = 0
+    total_out: int = 0
+    timestamp: str | None = None
+
+
+@app.post("/api/edge/heartbeat")
+async def edge_heartbeat(payload: EdgeHeartbeatPayload):
+    """Menerima sinyal detak jantung (heartbeat) & status performa NPU dari Edge Node."""
+    gid = payload.gate_id.upper().replace("GERBANG_", "")
+    if gid in state.edge_nodes:
+        state.edge_nodes[gid].update({
+            "status": "online",
+            "last_seen": time.time(),
+            "backend": payload.backend,
+            "fps": round(payload.fps, 1),
+            "buffer_count": payload.buffer_count,
+            "counts": {"in": payload.total_in, "out": payload.total_out},
+        })
+    return {"status": "ok", "gate_id": gid}
+
+
+@app.get("/api/edge/status")
+async def edge_status():
+    """Mengembalikan status konektivitas Edge Node Raspberry Pi 5 di lapangan."""
+    return get_edge_nodes_status()
 

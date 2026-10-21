@@ -46,5 +46,88 @@ def test_edge_runner_dispatch():
         assert call_kwargs["truk"] == 4
         assert call_kwargs["interval_menit"] == 5
 
-        # Akumulator harus kembali di-reset
+    # Akumulator harus kembali di-reset
         assert runner.counts_interval == {"motor": 0, "mobil": 0, "bus": 0, "truck": 0}
+
+
+def test_edge_runner_web_stream_init():
+    runner = SitinjauEdgeRunner(
+        gate_id="B",
+        web_stream=True,
+        web_port=8081,
+    )
+    assert runner.gate_id == "B"
+    assert runner.web_stream is True
+    assert runner.web_port == 8081
+    assert runner.stream_holder is not None
+
+
+def test_edge_stream_holder():
+    from main_edge import EdgeStreamHolder
+
+    holder = EdgeStreamHolder()
+    assert holder.get_frame() is None
+    assert holder.get_metadata() == {}
+
+    dummy_jpeg = b"\xff\xd8\xff\xe0dummy_jpeg_bytes"
+    meta = {"fps": 28.5, "gate": "B", "counts_in": 10, "counts_out": 5}
+    holder.update(dummy_jpeg, meta)
+
+    assert holder.get_frame() == dummy_jpeg
+    assert holder.get_metadata() == meta
+
+
+def test_edge_sync_client_heartbeat():
+    from src.edge.sync_client import EdgeSyncClient
+
+    client = EdgeSyncClient(server_url="http://mock-server:8000", gate_id="GERBANG_B")
+
+    with patch("requests.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+
+        success = client.send_heartbeat(
+            backend="hailo",
+            fps=30.0,
+            total_in=15,
+            total_out=12,
+            buffer_count=0,
+        )
+        assert success is True
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        assert "/api/edge/heartbeat" in args[0]
+        assert kwargs["json"]["gate_id"] == "GERBANG_B"
+        assert kwargs["json"]["backend"] == "hailo"
+        assert kwargs["json"]["fps"] == 30.0
+
+
+def test_edge_api_endpoints():
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    with TestClient(app) as client:
+        # Kirim heartbeat dari Gerbang B
+        hb_resp = client.post(
+            "/api/edge/heartbeat",
+            json={
+                "gate_id": "B",
+                "backend": "hailo",
+                "fps": 28.5,
+                "total_in": 12,
+                "total_out": 8,
+                "buffer_count": 0,
+            },
+        )
+        assert hb_resp.status_code == 200
+        assert hb_resp.json()["status"] == "ok"
+
+        # Cek status edge
+        status_resp = client.get("/api/edge/status")
+        assert status_resp.status_code == 200
+        status_data = status_resp.json()
+        assert "B" in status_data
+        assert status_data["B"]["status"] == "online"
+        assert status_data["B"]["backend"] == "hailo"
+        assert status_data["B"]["fps"] == 28.5
+        assert status_data["B"]["counts"]["in"] == 12
+        assert status_data["B"]["counts"]["out"] == 8

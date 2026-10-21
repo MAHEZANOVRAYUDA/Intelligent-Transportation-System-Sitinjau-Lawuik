@@ -51,7 +51,9 @@ class HailoDetector(BaseDetector):
             # Mencoba import Hailo Runtime API (hanya ada jika hailo-all terpasang di Raspberry Pi)
             from hailo_platform import (  # type: ignore
                 ConfigureParams,
+                Device,
                 FormatType,
+                HailoSchedulingAlgorithm,
                 HailoStreamInterface,
                 HEF,
                 InferVStreams,
@@ -61,8 +63,47 @@ class HailoDetector(BaseDetector):
             )
 
             logger.info("Menginisialisasi Hailo VDevice untuk arsitektur Hailo-8L...")
-            params = VDevice.create_params()
-            self._vdevice = VDevice(params)
+            
+            vdevice = None
+            init_errors = []
+
+            # Strategi 1: Direct Physical Allocation
+            try:
+                params = VDevice.create_params()
+                vdevice = VDevice(params)
+                logger.info("Hailo VDevice berhasil diinisialisasi via Direct Physical Mode.")
+            except Exception as e_direct:
+                init_errors.append(f"Direct: {e_direct}")
+                logger.warning("Direct physical allocation gagal (%s). Mencoba Multi-Process Service (MPS)...", e_direct)
+
+                # Strategi 2: Multi-Process Service (MPS) Mode (jika hailort.service aktif di Raspberry Pi OS)
+                try:
+                    params_mps = VDevice.create_params()
+                    params_mps.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
+                    params_mps.group_id = "SHARED"
+                    params_mps.multi_process_service = True
+                    vdevice = VDevice(params_mps)
+                    logger.info("Hailo VDevice berhasil diinisialisasi via Multi-Process Service (MPS)!")
+                except Exception as e_mps:
+                    init_errors.append(f"MPS: {e_mps}")
+                    logger.warning("MPS mode gagal (%s). Mencoba Explicit Scan Device IDs...", e_mps)
+
+                    # Strategi 3: Explicit Scan Device IDs
+                    try:
+                        scan_devices = Device.scan()
+                        if scan_devices:
+                            params_scan = VDevice.create_params()
+                            params_scan.device_ids = scan_devices
+                            vdevice = VDevice(params_scan)
+                            logger.info("Hailo VDevice berhasil diinisialisasi via explicit device ID: %s", scan_devices)
+                        else:
+                            raise RuntimeError("Device.scan() tidak menemukan device fisik aktif.")
+                    except Exception as e_scan:
+                        init_errors.append(f"Device Scan: {e_scan}")
+                        logger.error("Seluruh 3 strategi alokasi Hailo VDevice gagal: %s", " | ".join(init_errors))
+                        raise e_direct
+
+            self._vdevice = vdevice
             self._hef = HEF(str(self.hef_path))
 
             # Konfigurasi stream inferensi
@@ -107,12 +148,16 @@ class HailoDetector(BaseDetector):
                 logger.error(
                     "Gagal inisialisasi Hailo NPU: Chip Hailo-8L sedang sibuk atau terkunci oleh proses lain (status 74: HAILO_OUT_OF_PHYSICAL_DEVICES).\n"
                     "  [PANDUAN TROUBLESHOOTING RASPBERRY PI]:\n"
-                    "  1. Layanan background 'sitinjau-edge.service' kemungkinan sedang berjalan otomatis saat boot.\n"
-                    "     Hentikan service jika ingin menjalankan runner manual di terminal:\n"
-                    "       sudo systemctl stop sitinjau-edge\n"
-                    "  2. Periksa proses lain yang mengunci chip NPU:\n"
+                    "  1. Cek layanan background Multi-Process Service (hailort.service):\n"
+                    "       sudo systemctl stop hailort.service\n"
+                    "     atau aktifkan ulang:\n"
+                    "       sudo systemctl restart hailort.service\n"
+                    "  2. Periksa dan bunuh proses python/zombie yang mengunci chip NPU:\n"
                     "       sudo fuser -v /dev/hailo0\n"
-                    "  3. Periksa status deteksi fisik chip PCIe:\n"
+                    "       sudo fuser -k /dev/hailo0\n"
+                    "  3. Pastikan izin akses file device (permissions):\n"
+                    "       sudo chmod 666 /dev/hailo0\n"
+                    "  4. Periksa status fisik via Hailo CLI:\n"
                     "       hailortcli scan"
                 )
             else:

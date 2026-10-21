@@ -51,3 +51,24 @@ def test_vehicle_detector_graceful_fallback():
             assert success is True
             assert vd.is_loaded is True
             assert vd._model is not None
+
+
+def test_hailo_detector_mps_strategy_success():
+    """Memverifikasi bahwa jika direct mode gagal, strategi MPS berhasil memuat Hailo."""
+    from src.config import ROOT_DIR
+    detector = HailoDetector(hef_path=ROOT_DIR / "models" / "yolov8n.hef", mock_mode=False)
+
+    with patch.dict("sys.modules", {"hailo_platform": MagicMock()}):
+        import sys
+        mock_hp = sys.modules["hailo_platform"]
+        # Panggilan pertama (direct) gagal, panggilan kedua (MPS) sukses
+        mock_vdevice = MagicMock()
+        mock_network_group = MagicMock()
+        mock_vdevice.configure.return_value = [mock_network_group]
+        mock_hp.VDevice.side_effect = [RuntimeError("status=74 direct busy"), mock_vdevice]
+
+        loaded = detector.load()
+        assert loaded is True
+        assert detector.is_loaded is True
+        assert detector.is_mock is False
+        assert detector._vdevice is mock_vdevice

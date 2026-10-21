@@ -26,6 +26,30 @@ class EdgeSyncClient:
         self.buffer = buffer_manager or EdgeBufferManager()
         self.timeout_sec = timeout_sec
 
+    def send_heartbeat(
+        self,
+        backend: str,
+        fps: float,
+        total_in: int = 0,
+        total_out: int = 0,
+        buffer_count: int = 0,
+    ) -> bool:
+        """Kirim sinyal heartbeat ringan ke server pusat."""
+        payload = {
+            "gate_id": self.gate_id,
+            "backend": backend,
+            "fps": fps,
+            "total_in": total_in,
+            "total_out": total_out,
+            "buffer_count": buffer_count,
+        }
+        endpoint = f"{self.server_url}/api/edge/heartbeat"
+        try:
+            resp = requests.post(endpoint, json=payload, timeout=2.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
     def send_or_buffer(
         self,
         arah: str,

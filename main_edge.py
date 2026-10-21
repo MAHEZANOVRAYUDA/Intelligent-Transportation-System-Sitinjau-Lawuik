@@ -6,12 +6,15 @@ Sistem Monitoring Kemacetan Sitinjau Lauik (Gerbang A / B)
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
 import sys
+import threading
 import time
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import cv2
@@ -32,6 +35,242 @@ logging.basicConfig(
 logger = logging.getLogger("SitinjauEdge")
 
 
+
+class EdgeStreamHolder:
+    """Buffer frame gambar JPEG teranotasi dan metadata performa NPU untuk web streaming."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._latest_jpeg: bytes | None = None
+        self._metadata: dict = {}
+
+    def update(self, jpeg: bytes, metadata: dict) -> None:
+        with self._lock:
+            self._latest_jpeg = jpeg
+            self._metadata = metadata
+
+    def get_frame(self) -> bytes | None:
+        with self._lock:
+            return self._latest_jpeg
+
+    def get_metadata(self) -> dict:
+        with self._lock:
+            return self._metadata.copy()
+
+
+class EdgeHTTPHandler(BaseHTTPRequestHandler):
+    """Handler HTTP ringan untuk stream MJPEG dan dashboard onsite Raspberry Pi."""
+
+    stream_holder: EdgeStreamHolder | None = None
+
+    def log_message(self, format: str, *args) -> None:
+        # Menekan log akses HTTP agar log inferensi terminal tetap bersih
+        pass
+
+    def do_GET(self) -> None:
+        if self.path in ("/", "/index.html"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            meta = self.stream_holder.get_metadata() if self.stream_holder else {}
+            gate = meta.get("gate", "Edge")
+            backend = meta.get("backend", "Hailo-8L")
+            html = f"""<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Sitinjau Edge — Gerbang {gate}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {{
+      --bg: #090d16;
+      --card: #131b2e;
+      --accent: #2563eb;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --border: rgba(255, 255, 255, 0.08);
+    }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }}
+    .header {{
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding: 0.875rem 1.25rem;
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }}
+    .badge-dot {{
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 2s infinite;
+    }}
+    @keyframes pulse {{
+      0%, 100% {{ opacity: 1; }}
+      50% {{ opacity: 0.4; }}
+    }}
+    .video-container {{
+      width: 100%;
+      max-width: 960px;
+      position: relative;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .video-container img {{
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }}
+    .stats-grid {{
+      width: 100%;
+      max-width: 960px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }}
+    .stat-card {{
+      background: var(--card);
+      padding: 1rem 1.25rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }}
+    .stat-title {{
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }}
+    .stat-value {{
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+    }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 700;">Sitinjau Lauik — Edge Node Gerbang {gate}</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">Hardware: Raspberry Pi 5 + Hailo-8L NPU ({backend})</p>
+    </div>
+    <div class="badge">
+      <span class="badge-dot"></span>
+      <span>NPU ACTIVE</span>
+    </div>
+  </div>
+  <div class="video-container">
+    <img src="/stream" alt="Live Edge NPU Stream">
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-title">NPU Inference FPS</div>
+      <div class="stat-value" id="val-fps">-- FPS</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Total Kendaraan Masuk</div>
+      <div class="stat-value" id="val-in">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Total Kendaraan Keluar</div>
+      <div class="stat-value" id="val-out">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Buffer Antrean Offline</div>
+      <div class="stat-value" id="val-buf">0 rekaman</div>
+    </div>
+  </div>
+  <script>
+    async function updateStats() {{
+      try {{
+        const res = await fetch('/api/status');
+        if (res.ok) {{
+          const d = await res.json();
+          document.getElementById('val-fps').textContent = (d.fps || 0).toFixed(1) + ' FPS';
+          document.getElementById('val-in').textContent = d.counts_in ?? 0;
+          document.getElementById('val-out').textContent = d.counts_out ?? 0;
+          document.getElementById('val-buf').textContent = (d.buffer_count ?? 0) + ' rekaman';
+        }}
+      }} catch (e) {{}}
+    }}
+    setInterval(updateStats, 1000);
+    updateStats();
+  </script>
+</body>
+</html>"""
+            self.wfile.write(html.encode("utf-8"))
+        elif self.path == "/api/status":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            meta = self.stream_holder.get_metadata() if self.stream_holder else {}
+            self.wfile.write(json.dumps(meta).encode("utf-8"))
+        elif self.path == "/stream":
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache, private")
+            self.send_header("Pragma", "no-cache")
+            self.end_headers()
+            try:
+                while True:
+                    frame = self.stream_holder.get_frame() if self.stream_holder else None
+                    if frame:
+                        self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+                    time.sleep(0.04)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+def start_edge_web_server(stream_holder: EdgeStreamHolder, port: int = 8080) -> HTTPServer:
+    """Menjalankan HTTP server MJPEG di thread terpisah."""
+    EdgeHTTPHandler.stream_holder = stream_holder
+    server = HTTPServer(("0.0.0.0", port), EdgeHTTPHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logger.info("Edge Live Web Stream aktif di http://0.0.0.0:%d", port)
+    return server
+
+
 class SitinjauEdgeRunner:
     """Runner deteksi & counting mandiri untuk node Raspberry Pi 5 di lapangan."""
 
@@ -43,12 +282,18 @@ class SitinjauEdgeRunner:
         interval_menit: int = 5,
         backend: str = "auto",
         preview: bool = False,
+        web_stream: bool = False,
+        web_port: int = 8080,
     ):
         self.gate_id = gate_id.upper()
         self.interval_menit = max(1, interval_menit)
         self.backend = backend
         self.preview = preview
+        self.web_stream = web_stream
+        self.web_port = web_port
+        self.stream_holder = EdgeStreamHolder() if (self.web_stream or self.preview) else None
         self.running = False
+        self.last_heartbeat_time = 0.0
 
         # Muat konfigurasi gerbang
         raw_settings, env = get_settings()
@@ -111,6 +356,9 @@ class SitinjauEdgeRunner:
         if not self.detector.load():
             logger.error("Gagal memuat detector backend '%s'. Keluar.", self.backend)
             return
+
+        if self.web_stream and self.stream_holder:
+            start_edge_web_server(self.stream_holder, self.web_port)
 
         self.running = True
         self._setup_signals()
@@ -200,8 +448,24 @@ class SitinjauEdgeRunner:
                     self._dispatch_interval_report()
                     self.last_sync_time = now
 
-                # 5. Visualisasi Opsional (Hanya jika mode preview diaktifkan)
-                if self.preview:
+                # 5. Periodik Heartbeat ke Server Pusat (setiap 15 detik)
+                if (now - self.last_heartbeat_time) >= 15.0:
+                    self.last_heartbeat_time = now
+                    active_backend = getattr(self.detector, "active_backend", self.backend)
+                    threading.Thread(
+                        target=self.sync_client.send_heartbeat,
+                        kwargs={
+                            "backend": active_backend,
+                            "fps": self.fps_meter,
+                            "total_in": self.counter.state.total_in,
+                            "total_out": self.counter.state.total_out,
+                            "buffer_count": self.buffer.count(),
+                        },
+                        daemon=True,
+                    ).start()
+
+                # 6. Visualisasi & Web Stream MJPEG
+                if self.stream_holder or self.preview:
                     annotated = annotate_frame(
                         frame=frame,
                         line=self.gate_cfg.counting_line,
@@ -216,17 +480,34 @@ class SitinjauEdgeRunner:
                     )
                     cv2.putText(
                         annotated,
-                        f"FPS: {self.fps_meter:.1f} | Buffer: {self.buffer.count()}",
-                        (20, 40),
+                        f"RPi5 + Hailo-8L | FPS: {self.fps_meter:.1f} | Buffer: {self.buffer.count()}",
+                        (20, 35),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
+                        0.7,
                         (0, 255, 0),
                         2,
                     )
-                    cv2.imshow("Sitinjau Laut - Edge Preview", annotated)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        self.running = False
-                        break
+                    if self.stream_holder:
+                        ret_enc, jpeg_bytes = cv2.imencode(
+                            ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                        )
+                        if ret_enc:
+                            self.stream_holder.update(
+                                jpeg_bytes.tobytes(),
+                                {
+                                    "gate": self.gate_id,
+                                    "backend": getattr(self.detector, "active_backend", self.backend),
+                                    "fps": round(self.fps_meter, 1),
+                                    "counts_in": self.counter.state.total_in,
+                                    "counts_out": self.counter.state.total_out,
+                                    "buffer_count": self.buffer.count(),
+                                },
+                            )
+                    if self.preview:
+                        cv2.imshow("Sitinjau Laut - Edge Preview", annotated)
+                        if cv2.waitKey(1) & 0xFF == ord("q"):
+                            self.running = False
+                            break
 
             cap.release()
             if self.preview:
@@ -284,6 +565,8 @@ def main():
     parser.add_argument("--backend", choices=["auto", "hailo", "ultralytics"], default=default_backend, help="Backend detektor")
 
     parser.add_argument("--preview", action="store_true", help="Buka jendela visualisasi (debug onsite)")
+    parser.add_argument("--web-stream", action="store_true", help="Aktifkan web streaming server MJPEG di port 8080 (http://<ip-rpi>:8080)")
+    parser.add_argument("--web-port", type=int, default=8080, help="Port untuk web streaming server MJPEG (default 8080)")
 
     args = parser.parse_args()
     ensure_directories()
@@ -295,6 +578,8 @@ def main():
         interval_menit=args.interval,
         backend=args.backend,
         preview=args.preview,
+        web_stream=args.web_stream,
+        web_port=args.web_port,
     )
     runner.start()
 

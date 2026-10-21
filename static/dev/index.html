@@ -243,6 +243,36 @@
       padding: 0.35rem 0.75rem;
       border-radius: 6px;
     }
+    .edge-node-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      transition: all 0.3s ease;
+    }
+    .edge-node-badge.online {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+    .edge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .edge-node-badge.online .edge-dot {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
 
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
@@ -273,8 +303,13 @@
         <span>Gerbang B</span>
         <span class="tab-sub">— Jembatan Timbang (Solok)</span>
       </button>
+    <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+      <div class="active-gate-badge" id="active-gate-badge">Gerbang Aktif: GERBANG A</div>
+      <div class="edge-node-badge" id="edge-node-badge" title="Status Edge Computing Raspberry Pi 5 + Hailo-8L di lapangan">
+        <span class="edge-dot" id="edge-dot"></span>
+        <span id="edge-status-text">Edge RPi 5: Memeriksa...</span>
+      </div>
     </div>
-    <div class="active-gate-badge" id="active-gate-badge">Gerbang Aktif: GERBANG A</div>
   </div>
 
   <div class="layout">
@@ -590,6 +625,9 @@
 
       // Ambil konfigurasi garis & koordinat gerbang dari server
       fetchGateState(gateId);
+
+      // Sinkronkan status edge node gerbang
+      updateEdgeBadge();
     }
 
     async function fetchGateState(gateId) {
@@ -1233,6 +1271,29 @@
         try { ws.close(); } catch(e) {}
       };
     }
+
+    async function updateEdgeBadge() {
+      try {
+        const res = await fetch('/api/edge/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const node = data[currentGate];
+        const badge = document.getElementById('edge-node-badge');
+        const text = document.getElementById('edge-status-text');
+        if (!badge || !text) return;
+        if (node && node.status === 'online') {
+          badge.classList.add('online');
+          const fps = node.fps ? (node.fps.toFixed(1) + ' FPS') : '';
+          const backend = node.backend ? node.backend.toUpperCase() : 'NPU';
+          text.textContent = 'Edge RPi 5: Online (' + backend + ' ' + fps + ')';
+        } else {
+          badge.classList.remove('online');
+          text.textContent = 'Edge RPi 5: Offline (Deteksi Laptop)';
+        }
+      } catch (e) {}
+    }
+    setInterval(updateEdgeBadge, 3000);
+    updateEdgeBadge();
 
     // Inisialisasi awal berdasarkan parameter URL (?gate=b atau ?gate=a)
     const urlParams = new URLSearchParams(window.location.search);

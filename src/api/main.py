@@ -556,10 +556,25 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
     clean_in = {c: int(in_dict.get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
     clean_out = {c: int(out_dict.get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
 
-    total_in_val = sum(clean_in.values()) if in_dict else (
+    # Self-healing fallback: jika edge node belum mengirim counts_in di heartbeat, fetch langsung dari onsite HTTP /api/status secara non-blocking
+    if not any(clean_in.values()) and client_ip:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                status_resp = await client.get(f"http://{client_ip}:8080/api/status")
+                if status_resp.status_code == 200:
+                    remote_data = status_resp.json()
+                    if "counts_in" in remote_data and isinstance(remote_data["counts_in"], dict):
+                        clean_in = {c: int(remote_data["counts_in"].get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
+                    if "counts_out" in remote_data and isinstance(remote_data["counts_out"], dict):
+                        clean_out = {c: int(remote_data["counts_out"].get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
+        except Exception:
+            pass
+
+    total_in_val = sum(clean_in.values()) if any(clean_in.values()) else (
         int(payload.total_in) if not isinstance(payload.total_in, dict) else 0
     )
-    total_out_val = sum(clean_out.values()) if out_dict else (
+    total_out_val = sum(clean_out.values()) if any(clean_out.values()) else (
         int(payload.total_out) if not isinstance(payload.total_out, dict) else 0
     )
 

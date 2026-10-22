@@ -256,6 +256,14 @@ async def _dev_mjpeg_generator(gate_id: str):
                                     yield chunk
                                     state.edge_nodes[gate_id]["last_seen"] = time.time()
                                     state.edge_nodes[gate_id]["status"] = "online"
+                            elif resp.status_code == 404:
+                                # Fallback jika edge node belum diperbarui ke versi dual stream
+                                async with client.stream("GET", f"{edge_ip.rstrip('/')}/stream") as resp_fallback:
+                                    if resp_fallback.status_code == 200:
+                                        async for chunk in resp_fallback.aiter_bytes():
+                                            yield chunk
+                                            state.edge_nodes[gate_id]["last_seen"] = time.time()
+                                            state.edge_nodes[gate_id]["status"] = "online"
                 except Exception:
                     pass
 

@@ -299,9 +299,8 @@ async def dev_stream(gate_id: str):
     )
 
 
-@router.get("/state/{gate_id}")
-async def dev_state(gate_id: str):
-    """State deteksi terkini untuk panel debug."""
+def _build_dev_gate_state(gate_id: str) -> dict:
+    """Membangun snapshot state deteksi terkini baik untuk Edge Node maupun Worker lokal."""
     gate_id = gate_id.upper()
     from src.config import get_settings
     _, env = get_settings()
@@ -349,6 +348,12 @@ async def dev_state(gate_id: str):
     if worker is None:
         return {"error": "Detection worker belum aktif"}
     return worker.get_debug_state(gate_id)
+
+
+@router.get("/state/{gate_id}")
+async def dev_state(gate_id: str):
+    """State deteksi terkini untuk panel debug."""
+    return _build_dev_gate_state(gate_id)
 
 
 @router.post("/calibrate/{gate_id}")
@@ -423,6 +428,22 @@ async def dev_ws(websocket: WebSocket, gate_id: str):
     """WebSocket update deteksi real-time untuk halaman dev."""
     gate_id = gate_id.upper()
     await websocket.accept()
+    from src.config import get_settings
+    _, env = get_settings()
+
+    is_edge = (gate_id in ("A", "B")) and state.is_gate_edge(gate_id, env)
+    if is_edge:
+        try:
+            while True:
+                data = _build_dev_gate_state(gate_id)
+                await websocket.send_json(data)
+                await asyncio.sleep(0.5)
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+        return
+
     worker = state.detection_worker
     if worker is None:
         await websocket.close()

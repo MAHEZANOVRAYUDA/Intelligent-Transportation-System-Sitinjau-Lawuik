@@ -1455,6 +1455,7 @@
       switchGate('A');
     }
 
+    let streamRetryTimer = null;
     img.addEventListener('error', () => {
       streamLive = false;
       img.style.opacity = '0';
@@ -1468,6 +1469,11 @@
         if (descEl) descEl.textContent = 'Kamera ' + meta.name + ' sedang offline atau stream belum terkirim.';
       }
       drawOverlay();
+
+      if (streamRetryTimer) clearTimeout(streamRetryTimer);
+      streamRetryTimer = setTimeout(() => {
+        img.src = '/api/dev/stream/' + currentGate + '?t=' + Date.now();
+      }, 3000);
     });
     img.addEventListener('load', () => {
       // Abaikan jika frame yang diterima adalah raster dummy offline (misal 640x360 dari proses backend lama)
@@ -1490,6 +1496,13 @@
     });
     window.addEventListener('resize', resizeCanvas);
     new ResizeObserver(resizeCanvas).observe(wrap);
+
+    // Fallback polling periodik jika WebSocket terputus atau tidak terhubung
+    setInterval(() => {
+      if (!currentWS || currentWS.readyState !== WebSocket.OPEN) {
+        fetchGateState(currentGate);
+      }
+    }, 1000);
   </script>
 </body>
 </html>

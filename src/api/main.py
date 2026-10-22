@@ -9,6 +9,8 @@ import psutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from typing import Any
+
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -162,7 +164,8 @@ def get_edge_nodes_status() -> dict:
     result = {}
     for gid, node in state.edge_nodes.items():
         last = node.get("last_seen")
-        is_online = (last is not None) and ((now - last) <= 60.0)
+        # Berikan batas toleransi 120 detik untuk stabilitas komunikasi wireless/edge
+        is_online = (last is not None) and ((now - last) <= 120.0)
         result[gid] = {
             **node,
             "status": "online" if is_online else "offline",
@@ -286,21 +289,23 @@ async def _proxy_edge_stream(gate_id: str = "B"):
 
     while True:
         node_info = state.edge_nodes.get(gate_id, {})
-        is_online = node_info.get("status") == "online"
+        edge_status = get_edge_nodes_status().get(gate_id, {})
+        is_online = edge_status.get("status") == "online"
         edge_ip = getattr(env, "gate_b_edge_url", "") or (
             f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
         )
 
-        if is_online and edge_ip:
+        if (is_online or getattr(env, "gate_b_edge_url", "")) and edge_ip:
             try:
                 stream_url = f"{edge_ip.rstrip('/')}/stream"
-                async with httpx.AsyncClient(timeout=4.0) as client:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     async with client.stream("GET", stream_url) as resp:
                         if resp.status_code == 200:
                             async for chunk in resp.aiter_bytes():
                                 yield chunk
-                                if state.edge_nodes.get(gate_id, {}).get("status") != "online":
-                                    break
+                                # Keep-alive node status selama frame berhasil diterima
+                                state.edge_nodes[gate_id]["last_seen"] = time.time()
+                                state.edge_nodes[gate_id]["status"] = "online"
             except Exception:
                 pass
 
@@ -435,11 +440,14 @@ class EdgeHeartbeatPayload(BaseModel):
     backend: str = "hailo"
     fps: float = 0.0
     buffer_count: int = 0
-    total_in: int = 0
-    total_out: int = 0
+    total_in: int | dict[str, Any] = 0
+    total_out: int | dict[str, Any] = 0
     frame_width: int = 2560
     frame_height: int = 1440
     timestamp: str | None = None
+
+
+EdgeHeartbeatPayload.model_rebuild()
 
 
 @app.post("/api/edge/heartbeat")
@@ -447,6 +455,18 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
     """Menerima sinyal detak jantung (heartbeat) & status performa NPU dari Edge Node."""
     gid = payload.gate_id.upper().replace("GERBANG_", "")
     client_ip = request.client.host if request.client else None
+
+    # Normalisasi hitungan jika dikirim berupa dictionary {kelas: count} atau integer
+    if isinstance(payload.total_in, dict):
+        total_in_val = sum(int(v) for v in payload.total_in.values() if str(v).isdigit())
+    else:
+        total_in_val = int(payload.total_in)
+
+    if isinstance(payload.total_out, dict):
+        total_out_val = sum(int(v) for v in payload.total_out.values() if str(v).isdigit())
+    else:
+        total_out_val = int(payload.total_out)
+
     if gid in state.edge_nodes:
         state.edge_nodes[gid].update({
             "status": "online",
@@ -454,7 +474,7 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
             "backend": payload.backend,
             "fps": round(payload.fps, 1),
             "buffer_count": payload.buffer_count,
-            "counts": {"in": payload.total_in, "out": payload.total_out},
+            "counts": {"in": total_in_val, "out": total_out_val},
             "frame_width": payload.frame_width,
             "frame_height": payload.frame_height,
             "ip": client_ip,

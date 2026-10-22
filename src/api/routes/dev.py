@@ -234,10 +234,12 @@ async def _dev_mjpeg_generator(gate_id: str):
     is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
 
     if is_edge_b:
-        # Stream di-proxy murni dari Edge Node (Raspberry Pi 5)
         while True:
+            import time
             node_info = state.edge_nodes.get("B", {})
-            is_online = node_info.get("status") == "online"
+            last = node_info.get("last_seen")
+            is_recent = (last is not None) and ((time.time() - last) <= 120.0)
+            is_online = (node_info.get("status") == "online") or is_recent or bool(getattr(env, "gate_b_edge_url", ""))
             edge_ip = getattr(env, "gate_b_edge_url", "") or (
                 f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
             )
@@ -245,14 +247,13 @@ async def _dev_mjpeg_generator(gate_id: str):
             if is_online and edge_ip:
                 try:
                     stream_url = f"{edge_ip.rstrip('/')}/stream"
-                    async with httpx.AsyncClient(timeout=4.0) as client:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
                         async with client.stream("GET", stream_url) as resp:
                             if resp.status_code == 200:
                                 async for chunk in resp.aiter_bytes():
                                     yield chunk
-                                    # Cek status periodik
-                                    if state.edge_nodes.get("B", {}).get("status") != "online":
-                                        break
+                                    state.edge_nodes["B"]["last_seen"] = time.time()
+                                    state.edge_nodes["B"]["status"] = "online"
                 except Exception:
                     pass
 

@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
@@ -261,10 +261,11 @@ class EdgeHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def start_edge_web_server(stream_holder: EdgeStreamHolder, port: int = 8080) -> HTTPServer:
-    """Menjalankan HTTP server MJPEG di thread terpisah."""
+def start_edge_web_server(stream_holder: EdgeStreamHolder, port: int = 8080) -> ThreadingHTTPServer:
+    """Menjalankan HTTP server MJPEG di thread terpisah (multi-threaded untuk stream bersamaan)."""
     EdgeHTTPHandler.stream_holder = stream_holder
-    server = HTTPServer(("0.0.0.0", port), EdgeHTTPHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), EdgeHTTPHandler)
+    server.daemon_threads = True
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     logger.info("Edge Live Web Stream aktif di http://0.0.0.0:%d", port)
@@ -362,7 +363,40 @@ class SitinjauEdgeRunner:
 
         self.running = True
         self._setup_signals()
+        self._start_heartbeat_worker()
         self._run_loop()
+
+    def _start_heartbeat_worker(self) -> None:
+        """Worker background periodik — mengirim heartbeat ke server pusat tiap 10 detik tanpa terhambat reconnect RTSP."""
+        def _loop():
+            while self.running:
+                try:
+                    active_backend = getattr(self.detector, "active_backend", self.backend)
+                    in_count = (
+                        sum(self.counter.state.total_in.values())
+                        if isinstance(self.counter.state.total_in, dict)
+                        else int(self.counter.state.total_in)
+                    )
+                    out_count = (
+                        sum(self.counter.state.total_out.values())
+                        if isinstance(self.counter.state.total_out, dict)
+                        else int(self.counter.state.total_out)
+                    )
+                    self.sync_client.send_heartbeat(
+                        backend=active_backend,
+                        fps=round(self.fps_meter, 1),
+                        total_in=in_count,
+                        total_out=out_count,
+                        buffer_count=self.buffer.count(),
+                        frame_width=2560,
+                        frame_height=1440,
+                    )
+                except Exception:
+                    pass
+                time.sleep(10.0)
+
+        t = threading.Thread(target=_loop, daemon=True)
+        t.start()
 
     def _setup_signals(self) -> None:
         def _handler(signum, frame):
@@ -448,24 +482,7 @@ class SitinjauEdgeRunner:
                     self._dispatch_interval_report()
                     self.last_sync_time = now
 
-                # 5. Periodik Heartbeat ke Server Pusat (setiap 15 detik)
-                if (now - self.last_heartbeat_time) >= 15.0:
-                    self.last_heartbeat_time = now
-                    active_backend = getattr(self.detector, "active_backend", self.backend)
-                    fh, fw = frame.shape[:2]
-                    threading.Thread(
-                        target=self.sync_client.send_heartbeat,
-                        kwargs={
-                            "backend": active_backend,
-                            "fps": self.fps_meter,
-                            "total_in": self.counter.state.total_in,
-                            "total_out": self.counter.state.total_out,
-                            "buffer_count": self.buffer.count(),
-                            "frame_width": fw,
-                            "frame_height": fh,
-                        },
-                        daemon=True,
-                    ).start()
+
 
                 # 6. Visualisasi & Web Stream MJPEG
                 if self.stream_holder or self.preview:

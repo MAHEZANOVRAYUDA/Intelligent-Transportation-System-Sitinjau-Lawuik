@@ -94,17 +94,27 @@ def draw_hud(
     cv2.rectangle(overlay, (0, 0), (w, 110), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
 
+    if isinstance(counts_in, dict):
+        line_in = (
+            f"IN  M:{counts_in.get('motor',0)} C:{counts_in.get('mobil',0)} "
+            f"B:{counts_in.get('bus',0)} T:{counts_in.get('truck',0)}"
+        )
+    else:
+        line_in = f"IN  TOTAL:{counts_in}"
+
+    if isinstance(counts_out, dict):
+        line_out = (
+            f"OUT M:{counts_out.get('motor',0)} C:{counts_out.get('mobil',0)} "
+            f"B:{counts_out.get('bus',0)} T:{counts_out.get('truck',0)}"
+        )
+    else:
+        line_out = f"OUT TOTAL:{counts_out}"
+
     lines = [
         f"DEV MODE | Gerbang {gate_id} | Infer {inference_fps:.1f} FPS",
         f"Deteksi: {detection_count} | Track: {track_count}",
-        (
-            f"IN  M:{counts_in.get('motor',0)} C:{counts_in.get('mobil',0)} "
-            f"B:{counts_in.get('bus',0)} T:{counts_in.get('truck',0)}"
-        ),
-        (
-            f"OUT M:{counts_out.get('motor',0)} C:{counts_out.get('mobil',0)} "
-            f"B:{counts_out.get('bus',0)} T:{counts_out.get('truck',0)}"
-        ),
+        line_in,
+        line_out,
     ]
     for i, text in enumerate(lines):
         cv2.putText(

@@ -2163,7 +2163,10 @@
       // 2. Dimmer Area Masa Depan (Future Time Zone)
       const curIdx = trend ? trend.findIndex(d => d.is_current) : -1;
       if (curIdx >= 0 && curIdx < trend.length - 1) {
-        const curX = xScale.getPixelForTick(curIdx);
+        const meta = chart.getDatasetMeta(0);
+        const curX = (meta && meta.data && meta.data[curIdx] && typeof meta.data[curIdx].x === 'number')
+          ? meta.data[curIdx].x
+          : xScale.getPixelForValue(curIdx);
         if (curX < chartArea.right) {
           ctx.fillStyle = 'rgba(10, 15, 29, 0.45)';
           ctx.fillRect(curX, chartArea.top, chartArea.right - curX, chartArea.height);
@@ -2196,10 +2199,13 @@
       // 1. Penanda Waktu Saat Ini (Vertical Timeline Hairline + Badge)
       const curIdx = trend ? trend.findIndex(d => d.is_current) : -1;
       if (curIdx >= 0) {
-        const curX = xScale.getPixelForTick(curIdx);
+        const meta = chart.getDatasetMeta(0);
+        const curX = (meta && meta.data && meta.data[curIdx] && typeof meta.data[curIdx].x === 'number')
+          ? meta.data[curIdx].x
+          : xScale.getPixelForValue(curIdx);
         if (curX >= chartArea.left && curX <= chartArea.right) {
           // Garis putus-putus vertikal
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
           ctx.lineWidth = 1.5;
           ctx.setLineDash([4, 3]);
           ctx.beginPath();
@@ -2220,7 +2226,7 @@
           if (bX + bW > chartArea.right - 4) bX = chartArea.right - bW - 4;
           const bY = chartArea.top + 4;
 
-          ctx.fillStyle = 'rgba(2, 132, 199, 0.92)';
+          ctx.fillStyle = 'rgba(2, 132, 199, 0.95)';
           ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
           ctx.lineWidth = 1;
           drawRoundedBox(bX, bY, bW, bH, 4);
@@ -2232,14 +2238,14 @@
           ctx.textBaseline = 'middle';
           ctx.fillText(badgeText, bX + bW / 2, bY + bH / 2);
 
-          // Watermark teks di area waktu mendatang
-          const futureW = chartArea.right - curX;
-          if (futureW > 160) {
+          // Watermark teks di area waktu mendatang (hanya tampil jika sisa ruang cukup lega dan tidak menabrak badge)
+          const availSpace = chartArea.right - (bX + bW);
+          if (availSpace > 240) {
             ctx.font = "600 9px 'JetBrains Mono', monospace";
             ctx.fillStyle = 'rgba(148, 163, 184, 0.40)';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('WAKTU MENDATANG (MENUNGGU ALIRAN DATA)', curX + futureW / 2, chartArea.top + 14);
+            ctx.fillText('WAKTU MENDATANG (MENUNGGU ALIRAN DATA)', (bX + bW) + availSpace / 2, chartArea.top + 14);
           }
         }
       }

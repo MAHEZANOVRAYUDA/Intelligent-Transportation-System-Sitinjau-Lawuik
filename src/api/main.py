@@ -495,7 +495,8 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
             "track_count": payload.track_count,
             "ip": client_ip,
         })
-    return {"status": "ok", "gate_id": gid}
+    cal = state.edge_calibrations.get(gid)
+    return {"status": "ok", "gate_id": gid, "calibration": cal}
 
 
 @app.get("/api/edge/status")

@@ -25,6 +25,7 @@ class EdgeSyncClient:
         self.gate_id = gate_id
         self.buffer = buffer_manager or EdgeBufferManager()
         self.timeout_sec = timeout_sec
+        self.latest_calibration: dict[str, Any] | None = None
 
     def send_heartbeat(
         self,
@@ -54,7 +55,17 @@ class EdgeSyncClient:
         endpoint = f"{self.server_url}/api/edge/heartbeat"
         try:
             resp = requests.post(endpoint, json=payload, timeout=2.0)
-            return resp.status_code == 200
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict):
+                        cal = data.get("calibration")
+                        if isinstance(cal, dict):
+                            self.latest_calibration = cal
+                except Exception:
+                    pass
+                return True
+            return False
         except Exception:
             return False
 

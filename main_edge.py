@@ -305,6 +305,10 @@ class SitinjauEdgeRunner:
         # Tentukan URL RTSP (Argumen CLI > Environment > Settings)
         if rtsp_url:
             self.rtsp_url = rtsp_url
+        elif os.environ.get("RTSP_URL"):
+            self.rtsp_url = os.environ.get("RTSP_URL")
+        elif os.environ.get(f"GATE_{self.gate_id}_RTSP_URL"):
+            self.rtsp_url = os.environ.get(f"GATE_{self.gate_id}_RTSP_URL")
         elif self.gate_id == "A" and env.gate_a_rtsp_url:
             self.rtsp_url = env.gate_a_rtsp_url
         elif self.gate_id == "B" and env.gate_b_rtsp_url:
@@ -384,7 +388,7 @@ class SitinjauEdgeRunner:
                         if isinstance(self.counter.state.total_out, dict)
                         else int(self.counter.state.total_out)
                     )
-                    self.sync_client.send_heartbeat(
+                    res = self.sync_client.send_heartbeat(
                         backend=active_backend,
                         fps=round(self.fps_meter, 1),
                         total_in=in_count,
@@ -395,6 +399,21 @@ class SitinjauEdgeRunner:
                         detection_count=self.latest_detection_count,
                         track_count=self.latest_track_count,
                     )
+                    cal = getattr(self.sync_client, "latest_calibration", None)
+                    if isinstance(cal, dict):
+                        if "counting_line" in cal and cal["counting_line"] and cal["counting_line"] != self.counter.line:
+                            self.counter.set_line(cal["counting_line"])
+                            self.gate_cfg.counting_line = cal["counting_line"]
+                            logger.info("[EDGE CALIBRATION] Garis hitung disinkronkan dari server: %s", cal["counting_line"])
+                        if "entry_direction" in cal and cal["entry_direction"] and cal["entry_direction"] != self.counter.entry_direction:
+                            self.counter.set_entry_direction(cal["entry_direction"])
+                            self.gate_cfg.entry_direction = cal["entry_direction"]
+                        if "lane_divider" in cal and cal["lane_divider"] and cal["lane_divider"] != self.counter.lane_divider:
+                            self.counter.set_lane_divider(cal["lane_divider"])
+                            self.gate_cfg.lane_divider = cal["lane_divider"]
+                        if "inbound_side" in cal and cal["inbound_side"] and cal["inbound_side"] != self.counter.inbound_side:
+                            self.counter.set_inbound_side(cal["inbound_side"])
+                            self.gate_cfg.inbound_side = cal["inbound_side"]
                 except Exception:
                     pass
                 time.sleep(10.0)

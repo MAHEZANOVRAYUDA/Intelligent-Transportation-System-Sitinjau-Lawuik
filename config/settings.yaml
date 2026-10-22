@@ -79,8 +79,8 @@ gates:
     location: "Jl. Padang Besi (Kota Padang)"
     direction: "A_to_B"
     # Garis virtual counting [x1, y1, x2, y2] — kalibrasi setelah kamera terpasang
-    # Default untuk resolusi ~2304x1296 (kamera Bardi prototype)
-    counting_line: [0, 854, 2303, 854]
+    # Default untuk resolusi kamera Bardi (2560x1440 / 2304x1296) full-span
+    counting_line: [0, 854, 2559, 854]
     entry_direction: down
     # Garis pemisah lajur (cyan) — kalibrasi dari /dev
     lane_divider: [1091, 16, 1153, 1274]

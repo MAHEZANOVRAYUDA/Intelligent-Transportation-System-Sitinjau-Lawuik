@@ -227,20 +227,22 @@ async def simulate_traffic(payload: SimulateTrafficRequest = SimulateTrafficRequ
 
 
 async def _dev_mjpeg_generator(gate_id: str):
+    gate_id = gate_id.upper()
     boundary = b"frame"
     from src.config import get_settings
     _, env = get_settings()
 
-    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
+    is_edge = (gate_id in ("A", "B")) and state.is_gate_edge(gate_id, env)
 
-    if is_edge_b:
+    if is_edge:
         while True:
             import time
-            node_info = state.edge_nodes.get("B", {})
+            node_info = state.edge_nodes.get(gate_id, {})
             last = node_info.get("last_seen")
             is_recent = (last is not None) and ((time.time() - last) <= 120.0)
-            is_online = (node_info.get("status") == "online") or is_recent or bool(getattr(env, "gate_b_edge_url", ""))
-            edge_ip = getattr(env, "gate_b_edge_url", "") or (
+            configured_url = getattr(env, f"gate_{gate_id.lower()}_edge_url", "")
+            is_online = (node_info.get("status") == "online") or is_recent or bool(configured_url)
+            edge_ip = configured_url or (
                 f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
             )
 
@@ -252,8 +254,8 @@ async def _dev_mjpeg_generator(gate_id: str):
                             if resp.status_code == 200:
                                 async for chunk in resp.aiter_bytes():
                                     yield chunk
-                                    state.edge_nodes["B"]["last_seen"] = time.time()
-                                    state.edge_nodes["B"]["status"] = "online"
+                                    state.edge_nodes[gate_id]["last_seen"] = time.time()
+                                    state.edge_nodes[gate_id]["status"] = "online"
                 except Exception:
                     pass
 
@@ -296,16 +298,16 @@ async def dev_state(gate_id: str):
     from src.config import get_settings
     _, env = get_settings()
 
-    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
-    if is_edge_b:
+    is_edge = (gate_id in ("A", "B")) and state.is_gate_edge(gate_id, env)
+    if is_edge:
         from src.config import get_gate_config
-        gate_cfg = get_gate_config("B")
-        node = state.edge_nodes.get("B", {})
+        gate_cfg = get_gate_config(gate_id)
+        node = state.edge_nodes.get(gate_id, {})
         counts = node.get("counts", {})
-        edge_cal = state.edge_calibrations.get("B", {})
+        edge_cal = state.edge_calibrations.get(gate_id, {})
         return {
             "mode": "edge",
-            "gate_id": "B",
+            "gate_id": gate_id,
             "status": node.get("status", "offline"),
             "backend": node.get("backend", "Hailo-8L"),
             "inference_fps": node.get("fps", 0.0),
@@ -339,22 +341,22 @@ async def calibrate_gate(gate_id: str, payload: CalibrateRequest):
     from src.config import get_settings
     _, env = get_settings()
 
-    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
+    is_edge = (gate_id in ("A", "B")) and state.is_gate_edge(gate_id, env)
 
     if payload.entry_direction and payload.entry_direction not in ("up", "down"):
         raise HTTPException(status_code=400, detail="entry_direction harus up atau down")
     if payload.inbound_side and payload.inbound_side not in ("left", "right"):
         raise HTTPException(status_code=400, detail="inbound_side harus left atau right")
 
-    if is_edge_b:
+    if is_edge:
         from src.config import get_gate_config, persist_gate_calibration
-        cfg = get_gate_config("B")
+        cfg = get_gate_config(gate_id)
         cur_line = payload.counting_line or (cfg.counting_line if cfg else [100, 400, 900, 400])
         cur_dir = payload.entry_direction or (cfg.entry_direction if cfg else "down")
         cur_divider = payload.lane_divider if payload.lane_divider is not None else (cfg.lane_divider if cfg else None)
         cur_inbound = payload.inbound_side or (cfg.inbound_side if cfg else "left")
 
-        state.edge_calibrations["B"] = {
+        state.edge_calibrations[gate_id] = {
             "counting_line": cur_line,
             "entry_direction": cur_dir,
             "lane_divider": cur_divider,
@@ -363,7 +365,7 @@ async def calibrate_gate(gate_id: str, payload: CalibrateRequest):
 
         if payload.persist:
             persist_gate_calibration(
-                gate_id="B",
+                gate_id=gate_id,
                 counting_line=cur_line,
                 entry_direction=cur_dir,
                 lane_divider=payload.lane_divider,
@@ -371,7 +373,7 @@ async def calibrate_gate(gate_id: str, payload: CalibrateRequest):
             )
         return {
             "status": "ok",
-            "gate_id": "B",
+            "gate_id": gate_id,
             "counting_line": cur_line,
             "entry_direction": cur_dir,
             "lane_divider": cur_divider,

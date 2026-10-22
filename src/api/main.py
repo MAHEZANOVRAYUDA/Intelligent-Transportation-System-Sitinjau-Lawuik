@@ -51,6 +51,14 @@ def _on_debug_update(gate_id: str, data: dict) -> None:
         pass
 
 
+def _is_gate_edge(gate_id: str, env: Any) -> bool:
+    gid = gate_id.upper()
+    mode = getattr(env, f"gate_{gid.lower()}_mode", "auto").lower()
+    edge_url = getattr(env, f"gate_{gid.lower()}_edge_url", "")
+    node_status = state.edge_nodes.get(gid, {}).get("status")
+    return mode == "edge" or bool(edge_url) or (node_status == "online")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_directories()
@@ -58,11 +66,14 @@ async def lifespan(app: FastAPI):
 
     raw, env = get_settings()
 
-    if env.gate_a_rtsp_url:
+    is_edge_a = getattr(env, "gate_a_mode", "auto").lower() == "edge"
+    if env.gate_a_rtsp_url and not is_edge_a:
         state.stream_registry.register(
             RTSPStreamManager(rtsp_url=env.gate_a_rtsp_url, gate_id="A")
         )
-    # Gerbang B hanya didaftarkan ke worker laptop jika bukan mode murni 'edge'
+    elif is_edge_a:
+        logger.info("Gerbang A dikonfigurasi sebagai EDGE NODE (Raspberry Pi 5) — Worker deteksi lokal laptop untuk Gerbang A dinonaktifkan.")
+
     is_edge_b = getattr(env, "gate_b_mode", "auto").lower() == "edge"
     if env.gate_b_rtsp_url and not is_edge_b:
         state.stream_registry.register(
@@ -186,21 +197,22 @@ def _build_current_snapshot() -> dict:
     snap["streams"] = state.stream_registry.get_status_dict()
     snap["edge_nodes"] = get_edge_nodes_status()
 
-    # Sinkronisasi status stream Gerbang B dari Edge Node jika mode edge aktif
+    # Sinkronisasi status stream Gerbang A & B dari Edge Node jika mode edge aktif
     _, env = get_settings()
-    if getattr(env, "gate_b_mode", "auto").lower() == "edge":
-        edge_b = snap["edge_nodes"].get("B", {})
-        is_edge_online = edge_b.get("status") == "online"
-        snap["streams"]["B"] = {
-            "gate_id": "B",
-            "state": "live" if is_edge_online else "offline",
-            "configured": True,
-            "fps": edge_b.get("fps", 0.0),
-            "is_live": is_edge_online,
-            "width": edge_b.get("frame_width", 2560),
-            "height": edge_b.get("frame_height", 1440),
-            "error_message": None if is_edge_online else "Edge Node Offline",
-        }
+    for gid in ("A", "B"):
+        if _is_gate_edge(gid, env):
+            edge_info = snap["edge_nodes"].get(gid, {})
+            is_edge_online = edge_info.get("status") == "online"
+            snap["streams"][gid] = {
+                "gate_id": gid,
+                "state": "live" if is_edge_online else "offline",
+                "configured": True,
+                "fps": edge_info.get("fps", 0.0),
+                "is_live": is_edge_online,
+                "width": edge_info.get("frame_width", 2560),
+                "height": edge_info.get("frame_height", 1440),
+                "error_message": None if is_edge_online else f"Edge Node Gerbang {gid} Offline",
+            }
     try:
         snap["hardware"] = {
             "cpu_percent": psutil.cpu_percent(interval=None),
@@ -281,8 +293,9 @@ async def _mjpeg_generator(gate_id: str):
         await asyncio.sleep(interval)
 
 
-async def _proxy_edge_stream(gate_id: str = "B"):
+async def _proxy_edge_stream(gate_id: str):
     """Proxy streaming MJPEG langsung dari unit Edge Node (Raspberry Pi 5)."""
+    gate_id = gate_id.upper()
     import httpx
     from src.config import get_settings
     _, env = get_settings()
@@ -291,11 +304,12 @@ async def _proxy_edge_stream(gate_id: str = "B"):
         node_info = state.edge_nodes.get(gate_id, {})
         edge_status = get_edge_nodes_status().get(gate_id, {})
         is_online = edge_status.get("status") == "online"
-        edge_ip = getattr(env, "gate_b_edge_url", "") or (
+        configured_url = getattr(env, f"gate_{gate_id.lower()}_edge_url", "")
+        edge_ip = configured_url or (
             f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
         )
 
-        if (is_online or getattr(env, "gate_b_edge_url", "")) and edge_ip:
+        if (is_online or configured_url) and edge_ip:
             try:
                 stream_url = f"{edge_ip.rstrip('/')}/stream"
                 async with httpx.AsyncClient(timeout=5.0) as client:
@@ -316,11 +330,9 @@ async def _proxy_edge_stream(gate_id: str = "B"):
 async def live_stream(gate_id: str):
     gate_id = gate_id.upper()
     _, env = get_settings()
-    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
-
-    if is_edge_b:
+    if _is_gate_edge(gate_id, env):
         return StreamingResponse(
-            _proxy_edge_stream("B"),
+            _proxy_edge_stream(gate_id),
             media_type="multipart/x-mixed-replace; boundary=frame",
         )
 

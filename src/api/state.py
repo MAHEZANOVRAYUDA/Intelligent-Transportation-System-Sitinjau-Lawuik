@@ -34,3 +34,12 @@ edge_nodes: dict[str, dict] = {
 
 # Menyimpan kalibrasi runtime sementara untuk edge node
 edge_calibrations: dict[str, dict] = {}
+
+
+def is_gate_edge(gate_id: str, env: Any) -> bool:
+    """Mengecek apakah gerbang (A atau B) beroperasi dalam mode Edge Node (RPi 5 + Hailo)."""
+    gid = gate_id.upper()
+    mode = getattr(env, f"gate_{gid.lower()}_mode", "auto").lower()
+    edge_url = getattr(env, f"gate_{gid.lower()}_edge_url", "")
+    node_status = edge_nodes.get(gid, {}).get("status")
+    return mode == "edge" or bool(edge_url) or (node_status == "online")

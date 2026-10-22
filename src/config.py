@@ -156,6 +156,8 @@ class DetectionConfig(BaseModel):
 
 class AppSettings(BaseSettings):
     gate_a_rtsp_url: str = ""
+    gate_a_mode: str = "auto"  # "auto" | "edge" | "local"
+    gate_a_edge_url: str = ""  # override misal: "http://172.20.10.x:8080"
     gate_b_rtsp_url: str = ""
     gate_b_mode: str = "auto"  # "auto" | "edge" | "local"
     gate_b_edge_url: str = ""  # override misal: "http://172.20.10.x:8080"

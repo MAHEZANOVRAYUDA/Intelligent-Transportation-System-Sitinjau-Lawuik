@@ -33,19 +33,23 @@ class EdgeSyncClient:
         fps: float,
         total_in: int = 0,
         total_out: int = 0,
+        counts_in: dict[str, int] | None = None,
+        counts_out: dict[str, int] | None = None,
         buffer_count: int = 0,
         frame_width: int = 2560,
         frame_height: int = 1440,
         detection_count: int = 0,
         track_count: int = 0,
     ) -> bool:
-        """Kirim sinyal heartbeat ringan ke server pusat."""
+        """Kirim sinyal heartbeat ringan ke server pusat termasuk breakdown kelas kendaraan."""
         payload = {
             "gate_id": self.gate_id,
             "backend": backend,
             "fps": fps,
             "total_in": total_in,
             "total_out": total_out,
+            "counts_in": counts_in or {},
+            "counts_out": counts_out or {},
             "buffer_count": buffer_count,
             "frame_width": frame_width,
             "frame_height": frame_height,

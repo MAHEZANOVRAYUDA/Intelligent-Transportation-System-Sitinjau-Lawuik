@@ -628,6 +628,8 @@
       if (img && !img.src.includes(targetSrc)) {
         img.src = targetSrc;
       }
+      if (img) img.style.display = "block";
+      if (ph) ph.style.display = "none";
     } else if (streamInfo.state === "connecting" || streamInfo.state === "reconnecting") {
       if (ph) ph.style.display = "flex";
       if (phTitle) phTitle.textContent = `Menghubungkan ke CCTV Gerbang ${gateIdUpper}... Mohon tunggu.`;

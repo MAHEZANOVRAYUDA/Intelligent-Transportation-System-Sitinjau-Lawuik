@@ -15,13 +15,13 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api import state
 from src.api.routes.dev import router as dev_router
 from src.capture.stream_manager import RTSPStreamManager
 from src.config import ensure_directories, get_gate_config, get_settings, get_stream_config
-from src.storage.database import clear_all_records, get_recent_snapshots, get_today_crossings, init_db
+from src.storage.database import clear_all_records, get_recent_snapshots, get_today_crossings, init_db, save_crossing
 from src.worker.detection_worker import DetectionWorker
 
 logging.basicConfig(
@@ -57,6 +57,56 @@ def _is_gate_edge(gate_id: str, env: Any) -> bool:
     edge_url = getattr(env, f"gate_{gid.lower()}_edge_url", "")
     node_status = state.edge_nodes.get(gid, {}).get("status")
     return mode == "edge" or bool(edge_url) or (node_status == "online")
+
+
+def _process_edge_vehicle_deltas(gate_id: str, new_in: dict[str, int], new_out: dict[str, int]) -> None:
+    """
+    Memproses delta pertambahan kendaraan dari Edge Node secara inkremental.
+    Menyimpan perlintasan baru ke database SQLite dan mendaftarkannya ke Occupancy Manager (PKJI).
+    """
+    gid = gate_id.upper().replace("GERBANG_", "")
+    if gid not in state.edge_nodes:
+        return
+
+    node = state.edge_nodes[gid]
+    directions = [
+        ("in", new_in, "last_processed_in"),
+        ("out", new_out, "last_processed_out"),
+    ]
+
+    for dir_name, new_counts, last_key in directions:
+        last_counts = node.setdefault(last_key, {"motor": 0, "mobil": 0, "bus": 0, "truck": 0})
+        for cls in ("motor", "mobil", "bus", "truck"):
+            raw_new = new_counts.get(cls, 0)
+            try:
+                new_val = int(raw_new)
+            except (ValueError, TypeError):
+                new_val = 0
+
+            old_val = int(last_counts.get(cls, 0))
+            if new_val < old_val:
+                # Reset onsite / restart edge runner
+                last_counts[cls] = new_val
+                continue
+
+            delta = new_val - old_val
+            if delta > 0:
+                for _ in range(delta):
+                    save_crossing(
+                        gate_id=gid,
+                        direction=dir_name,
+                        class_name=cls,
+                        confidence=0.88,
+                        track_id=None,
+                    )
+                    if dir_name == "in":
+                        direction_flow = "menanjak" if gid == "A" else "menurun"
+                        state.occupancy_manager.register_entry(cls, gate=gid, direction=direction_flow)
+                    else:
+                        direction_flow = "menurun" if gid == "A" else "menanjak"
+                        state.occupancy_manager.register_exit(cls, gate=gid, direction=direction_flow)
+
+                last_counts[cls] = new_val
 
 
 @asynccontextmanager
@@ -213,6 +263,12 @@ def _build_current_snapshot() -> dict:
                 "height": edge_info.get("frame_height", 1440),
                 "error_message": None if is_edge_online else f"Edge Node Gerbang {gid} Offline",
             }
+            edge_in = edge_info.get("counts_in", {"motor": 0, "mobil": 0, "bus": 0, "truck": 0})
+            edge_out = edge_info.get("counts_out", {"motor": 0, "mobil": 0, "bus": 0, "truck": 0})
+            snap["gate_counts"][gid] = {
+                "in": edge_in,
+                "out": edge_out,
+            }
     try:
         snap["hardware"] = {
             "cpu_percent": psutil.cpu_percent(interval=None),
@@ -293,7 +349,7 @@ async def _mjpeg_generator(gate_id: str):
         await asyncio.sleep(interval)
 
 
-async def _proxy_edge_stream(gate_id: str):
+async def _proxy_edge_stream(gate_id: str, endpoint: str = "/stream"):
     """Proxy streaming MJPEG langsung dari unit Edge Node (Raspberry Pi 5)."""
     gate_id = gate_id.upper()
     import httpx
@@ -311,7 +367,8 @@ async def _proxy_edge_stream(gate_id: str):
 
         if (is_online or configured_url) and edge_ip:
             try:
-                stream_url = f"{edge_ip.rstrip('/')}/stream"
+                clean_ep = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+                stream_url = f"{edge_ip.rstrip('/')}{clean_ep}"
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     async with client.stream("GET", stream_url) as resp:
                         if resp.status_code == 200:
@@ -332,7 +389,7 @@ async def live_stream(gate_id: str):
     _, env = get_settings()
     if _is_gate_edge(gate_id, env):
         return StreamingResponse(
-            _proxy_edge_stream(gate_id),
+            _proxy_edge_stream(gate_id, endpoint="/stream"),
             media_type="multipart/x-mixed-replace; boundary=frame",
         )
 
@@ -426,6 +483,22 @@ async def terima_lapor_lalin(payload: PayloadGerbang, request: Request):
     else:
         status = "MACET / ARUS JENUH"
 
+    # Simpan transaksi ke database & occupancy manager jika ini merupakan kuras offline buffer
+    now = time.time()
+    last_hb = state.edge_nodes.get(gid, {}).get("last_seen", 0) or 0
+    is_offline_replay = (now - last_hb > 30.0)
+    if is_offline_replay:
+        dir_str = "in" if is_naik else "out"
+        classes_data = [("motor", payload.motor), ("mobil", payload.mobil), ("bus", payload.bus), ("truck", payload.truk)]
+        for c_name, count_val in classes_data:
+            if count_val > 0:
+                for _ in range(count_val):
+                    save_crossing(gate_id=gid, direction=dir_str, class_name=c_name, confidence=0.90)
+                    if dir_str == "in":
+                        state.occupancy_manager.register_entry(c_name, gate=gid, direction="menanjak" if gid == "A" else "menurun")
+                    else:
+                        state.occupancy_manager.register_exit(c_name, gate=gid, direction="menurun" if gid == "A" else "menanjak")
+
     logger.info(
         "[LAPOR-LALIN INGEST] %s (%s) -> Q=%.1f smp/jam, C=%.1f, DS=%.3f, Status=%s",
         payload.gate_id,
@@ -454,6 +527,8 @@ class EdgeHeartbeatPayload(BaseModel):
     buffer_count: int = 0
     total_in: int | dict[str, Any] = 0
     total_out: int | dict[str, Any] = 0
+    counts_in: dict[str, Any] = Field(default_factory=dict)
+    counts_out: dict[str, Any] = Field(default_factory=dict)
     frame_width: int = 2560
     frame_height: int = 1440
     detection_count: int = 0
@@ -470,16 +545,26 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
     gid = payload.gate_id.upper().replace("GERBANG_", "")
     client_ip = request.client.host if request.client else None
 
-    # Normalisasi hitungan jika dikirim berupa dictionary {kelas: count} atau integer
-    if isinstance(payload.total_in, dict):
-        total_in_val = sum(int(v) for v in payload.total_in.values() if str(v).isdigit())
-    else:
-        total_in_val = int(payload.total_in)
+    # Normalisasi hitungan dictionary per-kelas
+    in_dict = dict(payload.counts_in) if isinstance(payload.counts_in, dict) and payload.counts_in else (
+        payload.total_in if isinstance(payload.total_in, dict) else {}
+    )
+    out_dict = dict(payload.counts_out) if isinstance(payload.counts_out, dict) and payload.counts_out else (
+        payload.total_out if isinstance(payload.total_out, dict) else {}
+    )
 
-    if isinstance(payload.total_out, dict):
-        total_out_val = sum(int(v) for v in payload.total_out.values() if str(v).isdigit())
-    else:
-        total_out_val = int(payload.total_out)
+    clean_in = {c: int(in_dict.get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
+    clean_out = {c: int(out_dict.get(c, 0)) for c in ("motor", "mobil", "bus", "truck")}
+
+    total_in_val = sum(clean_in.values()) if in_dict else (
+        int(payload.total_in) if not isinstance(payload.total_in, dict) else 0
+    )
+    total_out_val = sum(clean_out.values()) if out_dict else (
+        int(payload.total_out) if not isinstance(payload.total_out, dict) else 0
+    )
+
+    # Jalankan delta processing untuk mencatat kendaraan baru secara realtime
+    _process_edge_vehicle_deltas(gid, clean_in, clean_out)
 
     if gid in state.edge_nodes:
         state.edge_nodes[gid].update({
@@ -489,6 +574,8 @@ async def edge_heartbeat(payload: EdgeHeartbeatPayload, request: Request):
             "fps": round(payload.fps, 1),
             "buffer_count": payload.buffer_count,
             "counts": {"in": total_in_val, "out": total_out_val},
+            "counts_in": clean_in,
+            "counts_out": clean_out,
             "frame_width": payload.frame_width,
             "frame_height": payload.frame_height,
             "detection_count": payload.detection_count,

@@ -37,21 +37,27 @@ logger = logging.getLogger("SitinjauEdge")
 
 
 class EdgeStreamHolder:
-    """Buffer frame gambar JPEG teranotasi dan metadata performa NPU untuk web streaming."""
+    """Buffer frame gambar JPEG (bersih & teranotasi) dan metadata performa NPU untuk web streaming."""
 
     def __init__(self):
         self._lock = threading.Lock()
         self._latest_jpeg: bytes | None = None
+        self._clean_jpeg: bytes | None = None
         self._metadata: dict = {}
 
-    def update(self, jpeg: bytes, metadata: dict) -> None:
+    def update(self, annotated_jpeg: bytes, metadata: dict, clean_jpeg: bytes | None = None) -> None:
         with self._lock:
-            self._latest_jpeg = jpeg
+            self._latest_jpeg = annotated_jpeg
+            if clean_jpeg is not None:
+                self._clean_jpeg = clean_jpeg
             self._metadata = metadata
 
-    def get_frame(self) -> bytes | None:
+    def get_frame(self, mode: str = "clean") -> bytes | None:
+        """Mengambil frame MJPEG: 'clean' (frame CCTV asli) atau 'dev' (frame dengan bounding box)."""
         with self._lock:
-            return self._latest_jpeg
+            if mode == "dev":
+                return self._latest_jpeg or self._clean_jpeg
+            return self._clean_jpeg or self._latest_jpeg
 
     def get_metadata(self) -> dict:
         with self._lock:
@@ -242,7 +248,8 @@ class EdgeHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             meta = self.stream_holder.get_metadata() if self.stream_holder else {}
             self.wfile.write(json.dumps(meta).encode("utf-8"))
-        elif self.path == "/stream":
+        elif self.path.startswith("/stream"):
+            stream_mode = "dev" if "/stream/dev" in self.path else "clean"
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-cache, private")
@@ -250,7 +257,7 @@ class EdgeHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             try:
                 while True:
-                    frame = self.stream_holder.get_frame() if self.stream_holder else None
+                    frame = self.stream_holder.get_frame(mode=stream_mode) if self.stream_holder else None
                     if frame:
                         self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
                     time.sleep(0.04)
@@ -378,21 +385,25 @@ class SitinjauEdgeRunner:
             while self.running:
                 try:
                     active_backend = getattr(self.detector, "active_backend", self.backend)
-                    in_count = (
-                        sum(self.counter.state.total_in.values())
+                    counts_in_dict = (
+                        dict(self.counter.state.total_in)
                         if isinstance(self.counter.state.total_in, dict)
-                        else int(self.counter.state.total_in)
+                        else {"motor": 0, "mobil": int(self.counter.state.total_in), "bus": 0, "truck": 0}
                     )
-                    out_count = (
-                        sum(self.counter.state.total_out.values())
+                    counts_out_dict = (
+                        dict(self.counter.state.total_out)
                         if isinstance(self.counter.state.total_out, dict)
-                        else int(self.counter.state.total_out)
+                        else {"motor": 0, "mobil": int(self.counter.state.total_out), "bus": 0, "truck": 0}
                     )
+                    in_count = sum(int(v) for v in counts_in_dict.values())
+                    out_count = sum(int(v) for v in counts_out_dict.values())
                     res = self.sync_client.send_heartbeat(
                         backend=active_backend,
                         fps=round(self.fps_meter, 1),
                         total_in=in_count,
                         total_out=out_count,
+                        counts_in=counts_in_dict,
+                        counts_out=counts_out_dict,
                         buffer_count=self.buffer.count(),
                         frame_width=2560,
                         frame_height=1440,
@@ -525,19 +536,30 @@ class SitinjauEdgeRunner:
                         draw_lines=False,
                     )
                     if self.stream_holder:
-                        stream_frame = annotated
-                        sh, sw = stream_frame.shape[:2]
+                        # 1. Bersiap encode frame bersih CCTV asli (tanpa bounding box) untuk dashboard
+                        clean_frame = frame
+                        sh, sw = clean_frame.shape[:2]
                         max_w = 1280
                         if sw > max_w:
                             scale = max_w / sw
+                            clean_frame = cv2.resize(clean_frame, (max_w, int(sh * scale)), interpolation=cv2.INTER_AREA)
+                        ret_clean, clean_bytes = cv2.imencode(
+                            ".jpg", clean_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                        )
+
+                        # 2. Encode frame beranotasi AI untuk dev mode
+                        stream_frame = annotated
+                        if sw > max_w:
+                            scale = max_w / sw
                             stream_frame = cv2.resize(stream_frame, (max_w, int(sh * scale)), interpolation=cv2.INTER_AREA)
-                        ret_enc, jpeg_bytes = cv2.imencode(
+                        ret_enc, dev_bytes = cv2.imencode(
                             ".jpg", stream_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75]
                         )
+
                         if ret_enc:
                             self.stream_holder.update(
-                                jpeg_bytes.tobytes(),
-                                {
+                                annotated_jpeg=dev_bytes.tobytes(),
+                                metadata={
                                     "gate": self.gate_id,
                                     "backend": getattr(self.detector, "active_backend", self.backend),
                                     "fps": round(self.fps_meter, 1),
@@ -545,6 +567,7 @@ class SitinjauEdgeRunner:
                                     "counts_out": self.counter.state.total_out,
                                     "buffer_count": self.buffer.count(),
                                 },
+                                clean_jpeg=clean_bytes.tobytes() if ret_clean else None,
                             )
                     if self.preview:
                         cv2.imshow("Sitinjau Laut - Edge Preview", annotated)

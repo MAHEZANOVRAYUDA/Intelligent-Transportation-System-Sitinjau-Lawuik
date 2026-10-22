@@ -20,6 +20,10 @@ edge_nodes: dict[str, dict] = {
         "backend": None,
         "fps": 0.0,
         "counts": {"in": 0, "out": 0},
+        "counts_in": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "counts_out": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "last_processed_in": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "last_processed_out": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
         "buffer_count": 0,
     },
     "B": {
@@ -28,6 +32,10 @@ edge_nodes: dict[str, dict] = {
         "backend": None,
         "fps": 0.0,
         "counts": {"in": 0, "out": 0},
+        "counts_in": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "counts_out": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "last_processed_in": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+        "last_processed_out": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
         "buffer_count": 0,
     },
 }

@@ -248,7 +248,7 @@ async def _dev_mjpeg_generator(gate_id: str):
 
             if is_online and edge_ip:
                 try:
-                    stream_url = f"{edge_ip.rstrip('/')}/stream"
+                    stream_url = f"{edge_ip.rstrip('/')}/stream/dev"
                     async with httpx.AsyncClient(timeout=5.0) as client:
                         async with client.stream("GET", stream_url) as resp:
                             if resp.status_code == 200:
@@ -304,7 +304,13 @@ async def dev_state(gate_id: str):
         gate_cfg = get_gate_config(gate_id)
         node = state.edge_nodes.get(gate_id, {})
         counts = node.get("counts", {})
+        counts_in = node.get("counts_in", {"motor": 0, "mobil": 0, "bus": 0, "truck": 0})
+        counts_out = node.get("counts_out", {"motor": 0, "mobil": 0, "bus": 0, "truck": 0})
         edge_cal = state.edge_calibrations.get(gate_id, {})
+        classes_total = {
+            c: counts_in.get(c, 0) + counts_out.get(c, 0)
+            for c in ("motor", "mobil", "bus", "truck")
+        }
         return {
             "mode": "edge",
             "gate_id": gate_id,
@@ -315,12 +321,15 @@ async def dev_state(gate_id: str):
             "frame_height": node.get("frame_height", 1440),
             "detection_count": node.get("detection_count", 0),
             "track_count": node.get("track_count", 0),
-            "total_in": counts.get("in", 0),
-            "total_out": counts.get("out", 0),
+            "total_in": counts.get("in", sum(counts_in.values())),
+            "total_out": counts.get("out", sum(counts_out.values())),
+            "counts_in": counts_in,
+            "counts_out": counts_out,
+            "live_class_counts": classes_total,
             "buffer_count": node.get("buffer_count", 0),
             "ip": node.get("ip"),
             "tracks": [],
-            "classes": {"motor": 0, "mobil": 0, "bus": 0, "truck": 0},
+            "classes": classes_total,
             "counting_line": edge_cal.get("counting_line", gate_cfg.counting_line if gate_cfg else [0, 854, 2559, 854]),
             "entry_direction": edge_cal.get("entry_direction", gate_cfg.entry_direction if gate_cfg else "down"),
             "lane_divider": edge_cal.get("lane_divider", gate_cfg.lane_divider if gate_cfg else [1150, 0, 1150, 1439]),

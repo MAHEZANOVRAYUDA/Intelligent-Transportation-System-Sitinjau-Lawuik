@@ -182,6 +182,22 @@ def _build_current_snapshot() -> dict:
     snap["today_crossings"] = get_today_crossings()
     snap["streams"] = state.stream_registry.get_status_dict()
     snap["edge_nodes"] = get_edge_nodes_status()
+
+    # Sinkronisasi status stream Gerbang B dari Edge Node jika mode edge aktif
+    _, env = get_settings()
+    if getattr(env, "gate_b_mode", "auto").lower() == "edge":
+        edge_b = snap["edge_nodes"].get("B", {})
+        is_edge_online = edge_b.get("status") == "online"
+        snap["streams"]["B"] = {
+            "gate_id": "B",
+            "state": "live" if is_edge_online else "offline",
+            "configured": True,
+            "fps": edge_b.get("fps", 0.0),
+            "is_live": is_edge_online,
+            "width": edge_b.get("frame_width", 2560),
+            "height": edge_b.get("frame_height", 1440),
+            "error_message": None if is_edge_online else "Edge Node Offline",
+        }
     try:
         snap["hardware"] = {
             "cpu_percent": psutil.cpu_percent(interval=None),
@@ -262,9 +278,47 @@ async def _mjpeg_generator(gate_id: str):
         await asyncio.sleep(interval)
 
 
+async def _proxy_edge_stream(gate_id: str = "B"):
+    """Proxy streaming MJPEG langsung dari unit Edge Node (Raspberry Pi 5)."""
+    import httpx
+    from src.config import get_settings
+    _, env = get_settings()
+
+    while True:
+        node_info = state.edge_nodes.get(gate_id, {})
+        is_online = node_info.get("status") == "online"
+        edge_ip = getattr(env, "gate_b_edge_url", "") or (
+            f"http://{node_info.get('ip')}:8080" if node_info.get("ip") else ""
+        )
+
+        if is_online and edge_ip:
+            try:
+                stream_url = f"{edge_ip.rstrip('/')}/stream"
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    async with client.stream("GET", stream_url) as resp:
+                        if resp.status_code == 200:
+                            async for chunk in resp.aiter_bytes():
+                                yield chunk
+                                if state.edge_nodes.get(gate_id, {}).get("status") != "online":
+                                    break
+            except Exception:
+                pass
+
+        await asyncio.sleep(0.5)
+
+
 @app.get("/api/stream/{gate_id}")
 async def live_stream(gate_id: str):
     gate_id = gate_id.upper()
+    _, env = get_settings()
+    is_edge_b = (gate_id == "B") and (getattr(env, "gate_b_mode", "auto").lower() == "edge")
+
+    if is_edge_b:
+        return StreamingResponse(
+            _proxy_edge_stream("B"),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+        )
+
     stream = state.stream_registry.get(gate_id)
     if stream is None:
         raise HTTPException(

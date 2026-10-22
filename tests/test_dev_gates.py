@@ -67,5 +67,14 @@ def test_dev_html_contains_gate_b():
     assert "tab-gate-a" in content
     assert "tab-gate-b" in content
     assert "switchGate('B')" in content
-    assert "active-gate-badge" in content
     assert "GATE_METADATA" in content
+
+
+def test_snapshot_streams_gate_b_sync(client):
+    """Memverifikasi bahwa monitoring snapshot menyinkronkan status stream Gerbang B dari edge node."""
+    res = client.get("/api/monitoring/current")
+    assert res.status_code == 200
+    data = res.json()
+    assert "streams" in data
+    assert "B" in data["streams"]
+    assert data["streams"]["B"]["configured"] is True

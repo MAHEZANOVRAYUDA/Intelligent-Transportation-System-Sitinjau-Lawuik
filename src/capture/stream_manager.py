@@ -163,10 +163,10 @@ class RTSPStreamManager:
         if self.rtsp_url and self.rtsp_url.startswith("rtsp://"):
             import os
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;0|analyzeduration;1000000|probesize;1000000"
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;5|max_delay;500000|analyzeduration;1000000|probesize;1000000"
             )
             os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
-            os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "16"
+            os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "8"
             try:
                 cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
             except Exception:

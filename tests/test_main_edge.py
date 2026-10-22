@@ -91,6 +91,8 @@ def test_edge_sync_client_heartbeat():
             total_in=15,
             total_out=12,
             buffer_count=0,
+            detection_count=3,
+            track_count=2,
         )
         assert success is True
         mock_post.assert_called_once()
@@ -99,6 +101,8 @@ def test_edge_sync_client_heartbeat():
         assert kwargs["json"]["gate_id"] == "GERBANG_B"
         assert kwargs["json"]["backend"] == "hailo"
         assert kwargs["json"]["fps"] == 30.0
+        assert kwargs["json"]["detection_count"] == 3
+        assert kwargs["json"]["track_count"] == 2
 
 
 def test_edge_api_endpoints():
@@ -116,6 +120,8 @@ def test_edge_api_endpoints():
                 "total_in": 12,
                 "total_out": 8,
                 "buffer_count": 0,
+                "detection_count": 4,
+                "track_count": 3,
             },
         )
         assert hb_resp.status_code == 200
@@ -131,3 +137,5 @@ def test_edge_api_endpoints():
         assert status_data["B"]["fps"] == 28.5
         assert status_data["B"]["counts"]["in"] == 12
         assert status_data["B"]["counts"]["out"] == 8
+        assert status_data["B"]["detection_count"] == 4
+        assert status_data["B"]["track_count"] == 3

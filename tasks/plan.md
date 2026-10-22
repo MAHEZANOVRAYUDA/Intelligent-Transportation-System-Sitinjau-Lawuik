@@ -1,162 +1,126 @@
-# Implementation Plan: Sinkronisasi Dev Gerbang A & B, Kalibrasi Garis Full-Span Bardi, Eliminasi Double Lines, & Edge Hardening
+# Implementation Plan: Perbaikan Deteksi Kendaraan (Bounding Box), Eliminasi Error POC FFmpeg, & Optimasi Edge Pi 5
 
 ## 1. Ringkasan Eksekutif & Analisis Akar Masalah (Root Causes)
 
-Berdasarkan inspeksi tangkapan layar Pengguna (Gambar 1, 2, dan 3) serta audit mendalam pada codebase frontend (`static/dev/index.html`) dan backend (`src/`), ditemukan 4 akar masalah teknis:
-
-### 1.1 Masalah 1: Bug Frame Tertimpa saat Beralih Gerbang (Gate Switching Stale Frame)
-- **Gejala (Gambar 1)**: Ketika beralih dari Gerbang A ke B, lalu kembali ke Gerbang A, video kamera Gerbang B tetap tampil membeku di latar belakang dengan garis koordinat Gerbang A tergambar di atasnya, disertai teks *"Menghubungkan ke CCTV GERBANG A..."*.
-- **Akar Masalah**: Elemen HTML native `<img id="dev-stream">` tidak menghapus buffer frame grafis lama saat atribut `src` diubah ke endpoint baru (`/api/dev/stream/A`). Karena kamera Gerbang A belum terhubung/offline, browser menahan frame terakhir dari Gerbang B. Pada saat bersamaan, `fetchGateState('A')` berhasil mengambil koordinat Gerbang A dan me-render garis Gerbang A di atas gambar beku Gerbang B.
-- **Solusi**: Pada fungsi `switchGate(gateId)` di `static/dev/index.html`:
-  1. Bersihkan canvas overlay seketika (`ctx.clearRect`).
-  2. Sembunyikan frame lama dengan menyetel `img.style.opacity = '0'` atau reset `src` ke placeholder kosong saat inisiasi pergantian.
-  3. Tampilkan kartu loading/offline berstandar UI elegan (`#video-offline`) yang menutupi area video sampai stream baru benar-benar mengirim frame pertama (`img.onload`).
-  4. Hanya tampilkan gambar kembali (`img.style.opacity = '1'`) setelah event `onload` frame baru terverifikasi.
+Berdasarkan analisis tangkapan layar Pengguna (Gambar 1: Dashboard Dev dan Gambar 2: Terminal Raspberry Pi 5) serta audit mendalam pada file `src/detection/hailo_detector.py`, `src/detection/detector.py`, dan `main_edge.py`, berikut adalah 3 akar masalah teknis utama:
 
 ---
 
-### 1.2 Masalah 2: Garis Kalibrasi Gerbang B Terpotong & Tidak Full-Span pada Kamera Bardi
-- **Gejala (Gambar 2)**: Garis merah (counting) Gerbang B hanya muncul pendek di bagian atas (`[100, 400, 900, 400]`), sedangkan garis biru/cyan (lajur) tidak presisi atau bocor dari Gerbang A.
-- **Akar Masalah**:
-  1. Di `config/settings.yaml`, koordinat default Gerbang B di-hardcode ke nilai sempit `[100, 400, 900, 400]`, padahal kamera CCTV Bardi memiliki resolusi native `2560×1440` (atau `2304×1296`).
-  2. Gerbang B tidak memiliki konfigurasi `lane_divider` default di `settings.yaml`. Akibatnya saat beralih ke Gerbang B, variabel `draftLane` di JavaScript tidak diperbarui dan tetap menyimpan koordinat garis lajur milik Gerbang A (`leakage state`).
-  3. Endpoint `dev_state("B")` di `src/api/routes/dev.py` tidak mengembalikan `frame_width` dan `frame_height`, sehingga rumus transformasi skala `frameToCanvas()` di frontend mengasumsikan resolusi yang salah.
-- **Solusi**:
-  1. Konfigurasi koordinat Gerbang B di `config/settings.yaml` agar membentang **penuh 100% layar** (*full-width* horizontal untuk counting: `[0, 854, 2559, 854]`, dan *full-height* vertikal untuk pemisah lajur: `[1150, 0, 1150, 1439]`).
-  2. Pastikan `dev_state("B")` selalu mengembalikan `frame_width: 2560`, `frame_height: 1440`, serta nilai `lane_divider` dan `inbound_side` yang valid.
-  3. Di JavaScript, jika `data.lane_divider` bernilai `null`, `draftLane` secara eksplisit disetel ke `null` (tidak mewarisi sisa gerbang sebelumnya).
+### 1.1 Akar Masalah Utama: Bounding Box & Objek Kendaraan 0 (Tidak Terdeteksi)
+Pada Gambar 1, overlay video menunjukkan:
+- `DEV MODE | Gerbang B | Infer 28.5 FPS`
+- `Deteksi: 0 | Track: 0`
+- Mobil hitam dan kendaraan lain melintas di jalan tetapi **sama sekali tidak ada bounding box** dan tidak ada objek yang terhitung.
+
+Penyebab teknis:
+1. **Ketidakcocokan Format Output Tensor Hailo (`_parse_hailo_output`)**:
+   Di `src/detection/hailo_detector.py`, fungsi parsing saat ini mengasumsikan tensor berdimensi 2D dengan jumlah kolom $\ge 6$:
+   ```python
+   data = np.squeeze(tensor)
+   if data.ndim != 2 or data.shape[1] < 6:
+       continue
+   ```
+   **Fakta Teknis Hailo Model Zoo**: Model resmi `yolov8n.hef` (arsitektur HailoRT Post-Process NMS) mengeluarkan struktur list/array berisi 80 kelas COCO (atau tensor per-class). Masing-masing kelas berisikan deteksi dengan format 5 nilai: `[ymin, xmin, ymax, xmax, score]`. Indeks kelas ditentukan oleh urutan kelas dalam list (`class_id = 0..79`), bukan kolom ke-6!
+   Karena kode memvalidasi `data.shape[1] < 6`, seluruh keluaran model Hailo **diabaikan dan dibuang** pada setiap frame. Akibatnya `len(detections)` selalu bernilai 0.
+2. **Bug Logika Fallback pada `VehicleDetector.detect`**:
+   Di `src/detection/detector.py`:
+   ```python
+   if self._hailo_detector is not None and not self._hailo_detector.is_mock:
+       return self._hailo_detector.detect(frame)
+   ```
+   Kondisi di atas hanya memeriksa apakah instance `self._hailo_detector` ada (`is not None`), tanpa memeriksa apakah NPU berhasil dimuat (`self._hailo_detector.is_loaded`). Jika inisialisasi Hailo gagal dan fallback Ultralytics aktif, kode tetap memanggil `HailoDetector.detect(frame)` yang selalu me-return `[]`. Ultralytics CPU/GPU tidak pernah dieksekusi.
 
 ---
 
-### 1.3 Masalah 3: Efek Garis Ganda (*Double Lines Artifact*) & Visual Clutter
-- **Gejala (Gambar 1 & 2 vs Gambar 3)**: Pada Gambar 1 dan 2 tampak garis merah ganda dan teks `COUNTING LINE` tercetak kaku di dalam video. Padahal pada Gambar 3 (tampilan ideal yang diinginkan pengguna), garis counting merah dan lajur cyan tampil sangat rapi, bersih, tanpa teks burned-in yang menumpuk.
-- **Akar Masalah**: Modul backend `annotate_frame` (`src/detection/visualizer.py`) menggambar garis merah dan cyan langsung ke dalam piksel JPEG video. Pada saat yang sama, elemen `<canvas id="line-canvas">` di frontend menggambar garis kalibrasi interaktif di atasnya. Saat ada perbedaan resolusi atau saat garis digeser, timbul efek bayangan ganda (*ghosting*).
-- **Solusi**:
-  1. Tambahkan parameter `draw_lines: bool = False` pada `annotate_frame` untuk stream mode `/dev`.
-  2. Alirkan video bersih dengan bounding box deteksi kendaraan ke frontend, dan biarkan `<canvas id="line-canvas">` menangani rendering garis virtual 2 arah secara visual interaktif persis seperti Gambar 3.
+### 1.2 Analisis Gambar 2: Terminal Raspberry Pi 5 (`sitinjau-gate-b`)
+1. **Perintah `sudo ufw allow 8080/tcp` -> `sudo: ufw: command not found`**:
+   - `ufw` (Uncomplicated Firewall) bukan paket bawaan default Raspberry Pi OS (Debian).
+   - **Kondisi Aktual**: Port 8080 **sudah berfungsi dan terbuka secara default**, terbukti video streaming dari port 8080 Raspberry Pi 5 berhasil diterima dan ditampilkan dengan mulus di browser laptop pada Gambar 1 (28.9 FPS). Perintah ini tidak diperlukan.
+2. **Log Error FFmpeg Berulang**:
+   ```
+   [OPENCV:FFMPEG:16] Could not find ref with POC 108
+   [OPENCV:FFMPEG:16] Error constructing the frame RPS.
+   ```
+   - **Akar Masalah**: Kamera CCTV Bardi mengalirkan video H.264/H.265 dengan frame tipe B (bi-directional prediction). Di `main_edge.py`, opsi capture disetel ke:
+     `OPENCV_FFMPEG_CAPTURE_OPTIONS = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;0|..."`
+     Parameter `reorder_queue_size;0` memaksa decoder FFmpeg untuk tidak menampung frame dalam antrean reorder. Akibatnya frame referensi (POC - Picture Order Count) terlambat tiba, dan FFmpeg gagal menyusun RPS (Reference Picture Set), menghasilkan log error berulang.
+   - **Solusi**: Ubah `reorder_queue_size;0` menjadi `reorder_queue_size;5` (toleransi 5 frame untuk menyusun referensi tanpa menambah delay terasa) serta sesuaikan `OPENCV_FFMPEG_LOGLEVEL` menjadi `8` (`AV_LOG_FATAL`).
 
 ---
 
-### 1.4 Masalah 4: Edge Hardening & Dependensi Bebas Error pada Raspberry Pi 5 (Hailo-8L)
-- **Kondisi**: Pengguna ingin seluruh persiapan kode di laptop tuntas malam ini sehingga konektor laptop-ke-Raspberry Pi dan Hailo terhubung sempurna, lalu besok script tinggal dijalankan di Raspberry Pi tanpa kendala dependensi atau permission.
-- **Temuan Dependensi**: File `requirements-edge.txt` belum mencantumkan `scipy`, padahal algoritma asosiasi Hungarian di `src/detection/tracker.py` mengimpor `from scipy.optimize import linear_sum_assignment`. Jika tidak ditambahkan, script edge akan melempar `ModuleNotFoundError: No module named 'scipy'`.
-- **Solusi**:
-  1. Lengkapi `requirements-edge.txt` dengan `scipy>=1.11.0`.
-  2. Pastikan `main_edge.py` menyalakan web streaming port 8080 secara default dan menangani gracefully reconnect kamera RTSP Bardi.
-  3. Sediakan panduan eksekusi terminal satu perintah yang mudah dan aman untuk pengguna jalankan di Raspberry Pi besok.
+### 1.3 Sinkronisasi Metrik HUD Bawah Video
+Pada Gambar 1, bilah status di bawah video menampilkan `Kecepatan AI: 0.0 FPS` dan `Objek Terdeteksi: 0`, meskipun video overlay menampilkan `Infer 28.5 FPS`.
+Hal ini terjadi karena endpoint `/api/dev/state/B` di Central Gateway Server belum meneruskan metrik live tracking/deteksi dari heartbeat Edge Node.
 
 ---
 
-## 2. Rencana Pelaksanaan Bertahap (Vertical Slice Tasks)
+## 2. Rencana Pelaksanaan Bertahap (Vertical Slices)
 
-### Task 1: Konfigurasi Full-Span Gerbang B & Sinkronisasi API State
-- **Tujuan**: Memastikan koordinat garis merah dan cyan Gerbang B membentang penuh di kamera Bardi (`2560×1440`) dan API mengembalikan metadata resolusi yang tepat.
+### Task 1: Perbaikan Parser Output Tensor Hailo-8L & Optimasi Lifecycle Stream
 - **Target Files**:
-  - `config/settings.yaml`
-  - `src/api/routes/dev.py`
+  - `src/detection/hailo_detector.py`
+  - `src/detection/detector.py`
 - **Rincian Perubahan**:
-  1. Di `config/settings.yaml`, perbarui Gerbang B:
-     ```yaml
-     counting_line: [0, 854, 2559, 854]
-     entry_direction: down
-     lane_divider: [1150, 0, 1150, 1439]
-     inbound_side: left
+  1. Modifikasi `_parse_hailo_output` di `src/detection/hailo_detector.py` agar polimorfik mendukung:
+     - Format resmi HailoRT NMS list-of-classes (80 kelas COCO, per-detection `[ymin, xmin, ymax, xmax, score]`).
+     - Format tensor 2D/3D `[N, 6]` (`[ymin, xmin, ymax, xmax, score, class_id]`).
+     - Normalisasi bounding box ke ukuran frame pixel dengan batas minimum area objek.
+  2. Pertahankan session `InferVStreams` dan `network_group.activate` agar tidak dibuat dan dihancurkan ulang setiap frame (menghilangkan latensi alokasi DMA).
+  3. Perbaiki guard di `src/detection/detector.py`:
+     ```python
+     if self._hailo_detector is not None and self._hailo_detector.is_loaded and not self._hailo_detector.is_mock:
+         return self._hailo_detector.detect(frame)
      ```
-  2. Di `src/api/routes/dev.py`, perbarui endpoint `dev_state("B")` agar menyertakan:
-     - `frame_width: 2560`
-     - `frame_height: 1440`
-     - Nilai fallback `lane_divider` dan `inbound_side` dari `settings.yaml`.
 - **Acceptance Criteria**:
-  - `GET /api/dev/state/B` menghasilkan JSON dengan `counting_line` penuh `[0, 854, 2559, 854]`, `lane_divider: [1150, 0, 1150, 1439]`, serta `frame_width: 2560, frame_height: 1440`.
-- **Verifikasi**: `pytest tests/test_dev_gates.py -v`.
+  - `_parse_hailo_output` berhasil mengekstrak kendaraan (mobil, motor, bus, truk) baik dari format list 80-kelas maupun format tensor matriks 6-kolom.
+  - Jika NPU tidak aktif, sistem otomatis berpindah ke Ultralytics dan tetap menghasilkan bounding box.
+- **Verifikasi**: Unit test `pytest tests/test_detector_fallback.py -v`.
 
 ---
 
-### Task 2: Eliminasi Double Lines pada Visualizer & Stream Edge
-- **Tujuan**: Menghilangkan garis burned-in kaku di dalam piksel JPEG sehingga hanya garis interaktif canvas beresolusi tajam yang tampil (standar Gambar 3).
+### Task 2: Eliminasi Error FFmpeg POC / RPS & Pembersihan Log Kamera RTSP
 - **Target Files**:
-  - `src/detection/visualizer.py`
   - `main_edge.py`
-  - `src/worker/detection_worker.py`
+  - `src/capture/stream_manager.py`
 - **Rincian Perubahan**:
-  1. Di `src/detection/visualizer.py`:
-     - Tambahkan flag `draw_lines: bool = True` pada `annotate_frame`.
-     - Ketika `draw_lines=False`, jangan gambar `draw_counting_line` dan `draw_lane_divider` ke frame (hanya gambar kotak deteksi, track, dan status HUD ringkas).
-  2. Di `src/worker/detection_worker.py`:
-     - Panggil `annotate_frame(..., draw_lines=False)` untuk feed debug `/dev`.
-  3. Di `main_edge.py`:
-     - Panggil `annotate_frame(..., draw_lines=False)` untuk feed web stream port 8080.
+  1. Perbarui `OPENCV_FFMPEG_CAPTURE_OPTIONS`:
+     - Ganti `reorder_queue_size;0` menjadi `reorder_queue_size;5` (memungkinkan penyusunan B-frame tanpa lag).
+     - Tambahkan `max_delay;500000`.
+     - Setel `OPENCV_FFMPEG_LOGLEVEL=8` (`AV_LOG_FATAL`) untuk meredam pesan non-fatal frame recovery.
 - **Acceptance Criteria**:
-  - Frame JPEG video yang dikirim ke browser tidak memiliki garis merah/cyan permanen yang bertumpuk dengan canvas.
-  - Video bersih dengan bounding box deteksi kendaraan yang responsif.
+  - Stream RTSP Bardi berjalan lancar tanpa spam `Could not find ref with POC` pada log service `systemctl status sitinjau-edge`.
 - **Verifikasi**: Jalankan `pytest tests/test_main_edge.py -v`.
 
 ---
 
-### Task 3: Pembenahan Frontend UI/UX, State Isolation, & Reset Transisi Gerbang
-- **Tujuan**: Menghilangkan bug frame tertimpa saat berganti gerbang, memastikan isolasi state kalibrasi antar gerbang, dan menampilkan garis virtual 2 arah yang rapi persis seperti Gambar 3.
+### Task 3: Sinkronisasi Metrik Live Detection & Heartbeat Edge ke Dashboard Dev
 - **Target Files**:
-  - `static/dev/index.html`
-- **Rincian Perubahan**:
-  1. Pada fungsi `switchGate(gateId)`:
-     - Reset state kalibrasi: `draftLine = null; draftLane = null;`.
-     - Bersihkan canvas seketika: `ctx.clearRect(0, 0, canvas.width, canvas.height);`.
-     - Reset tampilan stream: set `img.style.opacity = '0'`, tampilkan `#video-offline` dengan pesan *"Menghubungkan ke CCTV GERBANG [A/B]..."*.
-  2. Pasang event listener pada elemen `img`:
-     - `img.addEventListener('load')`: Ketika frame pertama dari stream baru tiba, hilangkan `#video-offline`, buat `img.style.opacity = '1'`, panggil `resizeCanvas()` dan `drawOverlay()`.
-     - `img.addEventListener('error')`: Tetap tampilkan `#video-offline` dengan indikasi offline.
-  3. Pada fungsi `updateUI(data)`:
-     - Terapkan pembaruan ketat untuk `draftLine` dan `draftLane`: jika data dari server tidak memiliki garis lajur atau bernilai `null`, set `draftLane = null` (cegah kebocoran koordinat dari Gerbang A ke Gerbang B).
-     - Perbarui `frameSize` dengan `data.frame_width` dan `data.frame_height`.
-  4. Penyempurnaan Rendering Canvas (Gambar 3 Standard):
-     - Pastikan garis merah (counting) dan garis cyan (lajur) digambar dengan ketebalan dan warna perceptually uniform (`#ff453a` dan `#3dd6ff`).
-     - Tampilkan label koordinat yang akurat di panel samping kanan (`counting: [...]`, `lajur: [...]`).
-- **Acceptance Criteria**:
-  - Transisi klik Gerbang A -> Gerbang B -> Gerbang A bersih 100%, tidak ada frame kamera B yang tertinggal di Gerbang A.
-  - Garis kalibrasi Gerbang B membentang penuh dari ujung ke ujung video tanpa terpotong.
-  - Tidak ada garis ganda yang tampak pada video.
-- **Verifikasi**: Uji transisi antarmuka di browser dan jalankan test suite frontend.
-
----
-
-### Task 4: Penguatan Dependensi & Konfigurasi Edge (Raspberry Pi 5 + Hailo-8L)
-- **Tujuan**: Menjamin tidak ada error modul hilang (`scipy`), port stream 8080 aktif otomatis, dan izin akses `/dev/hailo0` selalu siap saat dijalankan besok di Raspberry Pi.
-- **Target Files**:
-  - `requirements-edge.txt`
-  - `deployment/sitinjau-edge.service`
-  - `scripts/setup_edge_service.sh`
   - `main_edge.py`
+  - `src/edge/sync_client.py`
+  - `src/api/main.py`
+  - `src/api/routes/dev.py`
 - **Rincian Perubahan**:
-  1. Di `requirements-edge.txt`: Tambahkan `scipy>=1.11.0`.
-  2. Di `deployment/sitinjau-edge.service`: Pastikan `ExecStart` menyertakan argumen `--web-stream`.
-  3. Di `main_edge.py`: Buat argumen `--web-stream` aktif secara otomatis jika berjalan dalam mode service atau jika port 8080 tersedia.
-  4. Periksa penanganan error rekoneksi RTSP dan pelepasan file descriptor `/dev/hailo0` saat service dihentikan (`SIGTERM`).
+  1. Di `main_edge.py`, sertakan `detection_count` dan `track_count` terkini dalam laporan heartbeat berkala.
+  2. Di `src/api/main.py` dan `src/api/routes/dev.py`, simpan dan teruskan metrik `detection_count` dan `track_count` pada respons JSON `/api/dev/state/B`.
 - **Acceptance Criteria**:
-  - `requirements-edge.txt` memiliki semua dependensi yang dibutuhkan oleh tracker dan detector.
-  - File service systemd siap dieksekusi tanpa modifikasi manual.
-- **Verifikasi**: Jalankan validasi Python syntax check dan unit test `tests/test_main_edge.py`.
+  - Bilah status di bawah video Gambar 1 menampilkan FPS live, jumlah deteksi live, dan track live yang sinkron dengan frame video.
+- **Verifikasi**: Test endpoint API `/api/dev/state/B` dan heartbeat.
 
 ---
 
-### Task 5: Pengujian Penuh (Full Regression Test Suite) & Panduan Raspberry Pi
-- **Tujuan**: Memastikan seluruh 60+ unit test lulus (100% GREEN) dan memberikan panduan eksekusi ringkas untuk Raspberry Pi besok.
-- **Target Files**:
-  - Seluruh file test di `tests/`
-- **Acceptance Criteria**:
-  - `pytest -v` menghasilkan 100% PASSED (zero failures, zero errors).
-  - Git working directory bersih dan ter-push ke GitHub repository.
-- **Verifikasi**: Jalankan `pytest -v`.
+### Task 4: Panduan Operasional Terminal Raspberry Pi 5
+- **Tujuan**: Menyiapkan panduan eksekusi terminal step-by-step yang jelas untuk pengguna jalankan di layar Raspberry Pi (Gambar 2).
+- **Langkah yang dirumuskan**:
+  1. Melakukan `git pull origin main` di Raspberry Pi setelah kode diperbaiki.
+  2. Menjelaskan status `ufw` (mengapa `ufw` tidak perlu dipasang karena port 8080 sudah terbuka).
+  3. Merestart layanan edge: `sudo systemctl restart sitinjau-edge`.
+  4. Memeriksa status: `journalctl -u sitinjau-edge -n 25 -f`.
 
 ---
 
-## 3. Matriks Ketergantungan File
+## 3. Matriks Risiko & Mitigasi
 
-| File Target | Modifikasi Utama | Ketergantungan |
+| Risiko | Dampak | Mitigasi |
 |---|---|---|
-| `config/settings.yaml` | Koordinat full-span Gerbang B (`counting_line`, `lane_divider`) | `src/config.py` |
-| `src/api/routes/dev.py` | Resolusi `frame_width`/`height` & fallback kalibrasi Gerbang B | `settings.yaml`, `state.py` |
-| `src/detection/visualizer.py` | Parameter `draw_lines=False` untuk cegah double lines | `cv2`, `main_edge.py` |
-| `static/dev/index.html` | Frame clearing on gate switch, opacity transition, isolated draft state | `dev.py`, WebSockets |
-| `requirements-edge.txt` | Penambahan `scipy>=1.11.0` untuk tracker Hungarian algorithm | `tracker.py` |
-| `deployment/sitinjau-edge.service` | Flag `--web-stream` pada ExecStart | `main_edge.py` |
-| `main_edge.py` | Default web-stream & frame resolution metadata | `visualizer.py` |
+| Chip NPU Hailo-8L terkunci oleh proses zombie (status 74) | Medium | Sediakan fallback otomatis ke Ultralytics YOLOv8 dan panduan `sudo fuser -k /dev/hailo0` |
+| B-frame GOP kamera Bardi bervariasi | Low | `reorder_queue_size;5` memberikan fleksibilitas rekonstruksi GOP tanpa membebani latency |

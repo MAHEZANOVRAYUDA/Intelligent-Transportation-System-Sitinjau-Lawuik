@@ -28,6 +28,7 @@ class VehicleDetector(BaseDetector):
         self._model = None
         self._hailo_detector: HailoDetector | None = None
         self._loaded = False
+        self.active_backend: str = "none"
 
     def load(self) -> bool:
         # Jika diminta hailo, atau auto dan model hef tersedia
@@ -37,6 +38,7 @@ class VehicleDetector(BaseDetector):
                 self._hailo_detector = HailoDetector(hef_path=hef_path)
                 if self._hailo_detector.load() and not self._hailo_detector.is_mock:
                     self._loaded = True
+                    self.active_backend = "Hailo-8L"
                     logger.info("VehicleDetector menggunakan backend Hailo NPU: %s", hef_path)
                     return True
                 else:
@@ -45,8 +47,10 @@ class VehicleDetector(BaseDetector):
                         "Inisialisasi Hailo NPU tidak berhasil (%s). Mengaktifkan fallback otomatis ke Ultralytics YOLOv8 agar pendeteksian kendaraan tetap berjalan...",
                         hailo_err,
                     )
+                    self._hailo_detector = None
             except Exception as e:
                 logger.warning("Inisialisasi Hailo gagal (%s), fallback ke Ultralytics...", e)
+                self._hailo_detector = None
 
         # Fallback ke Ultralytics
         try:
@@ -62,10 +66,12 @@ class VehicleDetector(BaseDetector):
                 self._model = YOLO(str(model_path))
 
             self._loaded = True
+            self.active_backend = "Ultralytics"
             logger.info("Model YOLO Ultralytics loaded: %s", model_path)
             return True
         except Exception as e:
             logger.error("Gagal load model YOLO: %s", e)
+            self.active_backend = "none"
             return False
 
     @property
@@ -129,7 +135,7 @@ class VehicleDetector(BaseDetector):
         Returns:
             List of {bbox: [x1,y1,x2,y2], confidence, class_name, class_coco}
         """
-        if self._hailo_detector is not None and not self._hailo_detector.is_mock:
+        if self._hailo_detector is not None and self._hailo_detector.is_loaded and not self._hailo_detector.is_mock:
             return self._hailo_detector.detect(frame)
 
         if not self._loaded or self._model is None:

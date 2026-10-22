@@ -345,6 +345,8 @@ class SitinjauEdgeRunner:
         self.last_sync_time = time.time()
         self.frame_count = 0
         self.fps_meter = 0.0
+        self.latest_detection_count = 0
+        self.latest_track_count = 0
 
     def start(self) -> None:
         logger.info("=== Memulai Node Edge Sitinjau Lauik ===")
@@ -390,6 +392,8 @@ class SitinjauEdgeRunner:
                         buffer_count=self.buffer.count(),
                         frame_width=2560,
                         frame_height=1440,
+                        detection_count=self.latest_detection_count,
+                        track_count=self.latest_track_count,
                     )
                 except Exception:
                     pass
@@ -410,10 +414,10 @@ class SitinjauEdgeRunner:
         """Membuka koneksi RTSP dengan optimasi TCP transport, nobuffer, low-delay, dan peredaman log spam POC."""
         if self.rtsp_url and self.rtsp_url.startswith("rtsp://"):
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;0|analyzeduration;1000000|probesize;1000000"
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|reorder_queue_size;5|max_delay;500000|analyzeduration;1000000|probesize;1000000"
             )
             os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
-            os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "16"
+            os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "8"
             try:
                 cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
             except Exception:
@@ -462,6 +466,8 @@ class SitinjauEdgeRunner:
 
                 # 2. Tracking Objek (Kalman Filter + Association)
                 tracks = self.tracker.update(detections)
+                self.latest_detection_count = len(detections)
+                self.latest_track_count = len(tracks)
 
                 # 3. Hitung Garis Virtual
                 events = self.counter.update(tracks)

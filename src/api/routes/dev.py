@@ -311,6 +311,8 @@ async def dev_state(gate_id: str):
             "inference_fps": node.get("fps", 0.0),
             "frame_width": node.get("frame_width", 2560),
             "frame_height": node.get("frame_height", 1440),
+            "detection_count": node.get("detection_count", 0),
+            "track_count": node.get("track_count", 0),
             "total_in": counts.get("in", 0),
             "total_out": counts.get("out", 0),
             "buffer_count": node.get("buffer_count", 0),

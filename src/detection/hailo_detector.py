@@ -36,6 +36,8 @@ class HailoDetector(BaseDetector):
         self._target: Any = None
         self._infer_model: Any = None
         self._configured_infer_model: Any = None
+        self._activation: Any = None
+        self._infer_pipeline: Any = None
 
     def load(self) -> bool:
         """Memuat runtime Hailo-8L dan file biner HEF."""
@@ -212,75 +214,151 @@ class HailoDetector(BaseDetector):
             input_frame = cv2.resize(frame, (640, 640))
             input_frame = np.expand_dims(input_frame, axis=0)
 
-            # Eksekusi inferensi via PCIe NPU stream
-            with InferVStreams(
-                self._network_group,
-                self._input_vstream_params,
-                self._output_vstream_params,
-            ) as infer_pipeline:
-                input_data = {self._hef.get_input_vstream_infos()[0].name: input_frame}
-                with self._network_group.activate(self._network_group_params):
-                    raw_outputs = infer_pipeline.infer(input_data)
+            # Eksekusi inferensi via persistent PCIe NPU stream pipeline
+            if self._infer_pipeline is None or self._activation is None:
+                self._activation = self._network_group.activate(self._network_group_params)
+                self._activation.__enter__()
+                self._infer_pipeline = InferVStreams(
+                    self._network_group,
+                    self._input_vstream_params,
+                    self._output_vstream_params,
+                )
+                self._infer_pipeline.__enter__()
+
+            input_data = {self._hef.get_input_vstream_infos()[0].name: input_frame}
+            raw_outputs = self._infer_pipeline.infer(input_data)
 
             # Post-processing output Hailo YOLOv8
             return self._parse_hailo_output(raw_outputs, frame_w, frame_h)
 
         except Exception as e:
             logger.error("Error saat inferensi Hailo NPU: %s", e)
+            if hasattr(self, "_infer_pipeline") and self._infer_pipeline is not None:
+                try:
+                    self._infer_pipeline.__exit__(None, None, None)
+                except Exception:
+                    pass
+                self._infer_pipeline = None
+            if hasattr(self, "_activation") and self._activation is not None:
+                try:
+                    self._activation.__exit__(None, None, None)
+                except Exception:
+                    pass
+                self._activation = None
             return []
 
-    def _parse_hailo_output(self, raw_outputs: dict, orig_w: int, orig_h: int) -> list[dict]:
-        """Mengekstrak bounding box, skor, dan kelas dari output tensor Hailo."""
+    def _parse_hailo_output(self, raw_outputs: Any, orig_w: int, orig_h: int) -> list[dict]:
+        """Mengekstrak bounding box, skor, dan kelas dari output tensor Hailo (polimorfik)."""
         detections: list[dict] = []
-        
-        # Format keluaran YOLOv8 pada Hailo NPU NMS post-process
-        # Tensor biasanya berbentuk [num_detections, [ymin, xmin, ymax, xmax, score, class]]
-        for stream_name, tensor in raw_outputs.items():
-            if not isinstance(tensor, np.ndarray):
-                continue
-            
-            data = np.squeeze(tensor)
-            if data.ndim != 2 or data.shape[1] < 6:
+        if not raw_outputs:
+            return []
+
+        tensors = list(raw_outputs.values()) if isinstance(raw_outputs, dict) else [raw_outputs]
+
+        for item in tensors:
+            if item is None:
                 continue
 
-            for row in data:
-                ymin, xmin, ymax, xmax, score, cls_id = row[:6]
-                cls_id = int(cls_id)
-                score = float(score)
+            unwrapped = item
+            # Unwrap batch dimension jika bentuknya [1, ...]
+            if isinstance(unwrapped, (list, tuple)) and len(unwrapped) == 1 and isinstance(unwrapped[0], (list, tuple, np.ndarray)):
+                unwrapped = unwrapped[0]
+            elif isinstance(unwrapped, np.ndarray) and unwrapped.ndim >= 3 and unwrapped.shape[0] == 1:
+                unwrapped = unwrapped[0]
 
-                if score < self._cfg.confidence:
-                    continue
+            # KASUS 1: Struktur per-kelas (80 kelas COCO) - List of detections atau ndarray dengan len 80/85
+            if (isinstance(unwrapped, (list, tuple)) or isinstance(unwrapped, np.ndarray)) and len(unwrapped) in (80, 85):
+                for cls_id, class_dets in enumerate(unwrapped):
+                    if cls_id not in self.COCO_VEHICLE_IDS and cls_id not in self.COCO_TWO_WHEEL_IDS:
+                        continue
+                    if class_dets is None or len(class_dets) == 0:
+                        continue
 
-                if cls_id not in self.COCO_VEHICLE_IDS and cls_id not in self.COCO_TWO_WHEEL_IDS:
-                    continue
+                    coco_name = "motorcycle" if cls_id in self.COCO_TWO_WHEEL_IDS else self.COCO_VEHICLE_IDS.get(cls_id, "car")
+                    local_name = self._coco_map.get(coco_name, coco_name)
 
-                # Skala kembali ke resolusi asli
-                x1 = int(xmin * orig_w)
-                y1 = int(ymin * orig_h)
-                x2 = int(xmax * orig_w)
-                y2 = int(ymax * orig_h)
+                    # Pastikan bentuk iterable 2D: jika (5,), bungkus jadi [(5,)]
+                    dets_list = class_dets
+                    if isinstance(class_dets, np.ndarray) and class_dets.ndim == 1:
+                        dets_list = [class_dets]
 
-                bbox = [max(0, x1), max(0, y1), min(orig_w, x2), min(orig_h, y2)]
-                
-                # Pemetaan kelas ke nama lokal (mobil, motor, bus, truk)
-                if cls_id in self.COCO_TWO_WHEEL_IDS:
-                    coco_name = "motorcycle"
-                else:
-                    coco_name = self.COCO_VEHICLE_IDS.get(cls_id, "car")
-                    
-                local_name = self._coco_map.get(coco_name, coco_name)
+                    for det in dets_list:
+                        if len(det) < 5:
+                            continue
+                        ymin, xmin, ymax, xmax, score = float(det[0]), float(det[1]), float(det[2]), float(det[3]), float(det[4])
+                        if score < self._cfg.confidence:
+                            continue
 
-                detections.append({
-                    "bbox": bbox,
-                    "confidence": score,
-                    "class_coco": coco_name,
-                    "class_name": local_name,
-                })
+                        x1 = int(round(xmin * orig_w))
+                        y1 = int(round(ymin * orig_h))
+                        x2 = int(round(xmax * orig_w))
+                        y2 = int(round(ymax * orig_h))
+
+                        w = max(0, x2 - x1)
+                        h = max(0, y2 - y1)
+                        if w < 20 or h < 20 or (w * h) < 500:
+                            continue
+
+                        bbox = [max(0, x1), max(0, y1), min(orig_w, x2), min(orig_h, y2)]
+                        detections.append({
+                            "bbox": bbox,
+                            "confidence": score,
+                            "class_coco": coco_name,
+                            "class_name": local_name,
+                        })
+                continue
+
+            # KASUS 2: Matriks 2D [N, 6] dengan kolom [ymin, xmin, ymax, xmax, score, cls_id]
+            if isinstance(unwrapped, np.ndarray):
+                data = np.squeeze(unwrapped)
+                if data.ndim == 2 and data.shape[1] >= 6:
+                    for row in data:
+                        ymin, xmin, ymax, xmax, score, cls_id = row[:6]
+                        cls_id = int(cls_id)
+                        score = float(score)
+
+                        if score < self._cfg.confidence:
+                            continue
+                        if cls_id not in self.COCO_VEHICLE_IDS and cls_id not in self.COCO_TWO_WHEEL_IDS:
+                            continue
+
+                        x1 = int(round(xmin * orig_w))
+                        y1 = int(round(ymin * orig_h))
+                        x2 = int(round(xmax * orig_w))
+                        y2 = int(round(ymax * orig_h))
+
+                        w = max(0, x2 - x1)
+                        h = max(0, y2 - y1)
+                        if w < 20 or h < 20 or (w * h) < 500:
+                            continue
+
+                        bbox = [max(0, x1), max(0, y1), min(orig_w, x2), min(orig_h, y2)]
+                        coco_name = "motorcycle" if cls_id in self.COCO_TWO_WHEEL_IDS else self.COCO_VEHICLE_IDS.get(cls_id, "car")
+                        local_name = self._coco_map.get(coco_name, coco_name)
+
+                        detections.append({
+                            "bbox": bbox,
+                            "confidence": score,
+                            "class_coco": coco_name,
+                            "class_name": local_name,
+                        })
 
         return deduplicate_boxes(detections)
 
     def close(self) -> None:
         """Melepaskan resource Hailo VDevice agar file descriptor fisik PCIe tidak terkunci."""
+        try:
+            if hasattr(self, "_infer_pipeline") and self._infer_pipeline is not None:
+                self._infer_pipeline.__exit__(None, None, None)
+                self._infer_pipeline = None
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_activation") and self._activation is not None:
+                self._activation.__exit__(None, None, None)
+                self._activation = None
+        except Exception:
+            pass
         try:
             if hasattr(self, "_vdevice") and self._vdevice is not None:
                 if hasattr(self._vdevice, "release"):
